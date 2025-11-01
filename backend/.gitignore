@@ -1,0 +1,13 @@
+# backend/.gitignore
+
+# Python
+__pycache__/
+*.pyc
+venv/
+
+# Django
+db.sqlite3
+.env
+
+# VS Code
+.vscode/
