@@ -9,7 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Users, FileText, Clock, Settings, Brain, CalendarDays } from 'lucide-react';
 import AddTaskSheet from '@/components/AddTaskSheet';
-
+import AvailabilityCalendar from '@/components/AvailabilityCalendar';
 // This is a placeholder. We'll build this component later.
 
 
@@ -183,6 +183,7 @@ export default function ProjectPage() {
                 <TabsContent value="schedule" className="mt-4">
                     {/* We'll build this component next */}
                     <div className="text-gray-400">The `FullCalendar` component will go here.</div>
+                    <AvailabilityCalendar />
                 </TabsContent>
             </Tabs>
         </div>
