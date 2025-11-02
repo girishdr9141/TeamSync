@@ -17,6 +17,7 @@ urlpatterns = [
     path('auth/register/', views.RegisterView.as_view(), name='register'),
     path('auth/login/', views.LoginView.as_view(), name='login'),
     path('auth/user/', views.UserDetailView.as_view(), name='user-detail'),
+    path('auth/profile/', views.EmployeeProfileView.as_view(), name='user-profile'),
     
     # --- New ViewSet URLs ---
     # This line includes all the URLs that the router automatically created.

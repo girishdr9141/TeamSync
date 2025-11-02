@@ -7,9 +7,10 @@ from rest_framework.response import Response
 from rest_framework.decorators import action
 from rest_framework.views import APIView
 from rest_framework.authtoken.models import Token
+from .models import Project, Task, AvailabilitySlot, EmployeeProfile
 from .serializers import (
     RegisterSerializer, UserSerializer, ProjectSerializer, 
-    TaskSerializer, AvailabilitySlotSerializer, EmployeeProfileSerializer
+    TaskSerializer, AvailabilitySlotSerializer, EmployeeProfileSerializer,ProfileUpdateSerializer
 )
 from .models import Project, Task, AvailabilitySlot, EmployeeProfile
 from . import algorithms
@@ -147,3 +148,16 @@ class AvailabilitySlotViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         # When a new slot is created, automatically assign it to the logged-in user.
         serializer.save(employee=self.request.user)
+
+class EmployeeProfileView(generics.RetrieveUpdateAPIView):
+    """
+    API endpoint to Get and Update the logged-in user's profile.
+    """
+    queryset = EmployeeProfile.objects.all()
+    serializer_class = ProfileUpdateSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_object(self):
+        # This view doesn't take an ID.
+        # It just finds the profile associated with the user making the request.
+        return self.request.user.profile

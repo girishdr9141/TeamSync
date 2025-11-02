@@ -90,3 +90,10 @@ class AvailabilitySlotSerializer(serializers.ModelSerializer):
     class Meta:
         model = AvailabilitySlot
         fields = ['id', 'employee', 'start_time', 'end_time']
+
+
+class ProfileUpdateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = EmployeeProfile
+        # We only want to allow the user to update these two fields
+        fields = ['profile_data', 'current_workload']
