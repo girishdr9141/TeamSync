@@ -60,21 +60,32 @@ class TaskSerializer(serializers.ModelSerializer):
     """
     Serializer for the Task model.
     """
+    # This tells DRF to use the user's string representation (their username)
+    # instead of just their ID.
+    assigned_to = serializers.StringRelatedField(read_only=True)
+
     class Meta:
         model = Task
-        fields = '__all__' # Includes all fields: project, title, assigned_to, etc.
+        # We must now list all fields explicitly
+        fields = [
+            'id', 'project', 'title', 'description', 
+            'assigned_to', 'estimated_hours', 'task_data', 'status'
+        ]
 
+# --- THIS IS THE UPDATED PROJECT SERIALIZER ---
 class ProjectSerializer(serializers.ModelSerializer):
     """
     Serializer for the Project model.
     """
-    # This nests all related tasks inside the project's JSON.
+    # This nests all related tasks (using the new TaskSerializer)
     tasks = TaskSerializer(many=True, read_only=True)
-    # This shows the usernames of all members.
+    
+    # This will show the usernames (e.g., "testone") instead of IDs
     members = serializers.StringRelatedField(many=True, read_only=True)
 
     class Meta:
         model = Project
+        # We explicitly list the fields
         fields = ['id', 'name', 'description', 'members', 'tasks']
 
 
