@@ -45,10 +45,12 @@ export default function ProtectedLayout() {
 
                 {/* Footer / User Area */}
                 <div className="mt-auto">
-                    <Button variant="ghost" className="w-full justify-start text-lg text-gray-300 hover:bg-gray-800 hover:text-white">
-                        <Settings className="mr-3 h-5 w-5" />
-                        Settings
-                    </Button>
+                    <Link to="/settings">
+                        <Button variant="ghost" className="w-full justify-start text-lg text-gray-300 hover:bg-gray-800 hover:text-white">
+                            <Settings className="mr-3 h-5 w-5" />
+                            Settings
+                        </Button>
+                    </Link>
                     <Button 
                         variant="ghost" 
                         onClick={logout} 
