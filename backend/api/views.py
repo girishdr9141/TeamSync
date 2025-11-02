@@ -12,6 +12,7 @@ from .serializers import (
     TaskSerializer, AvailabilitySlotSerializer, EmployeeProfileSerializer
 )
 from .models import Project, Task, AvailabilitySlot, EmployeeProfile
+from . import algorithms
 
 # --- Auth Views (You already built these!) ---
 
@@ -26,12 +27,22 @@ class LoginView(APIView):
     def post(self, request, *args, **kwargs):
         username = request.data.get('username')
         password = request.data.get('password')
+        
         user = authenticate(username=username, password=password)
+        
         if user:
+            # --- THIS IS THE FIX ---
+            # We re-fetch the user object to make sure the 'profile'
+            # is correctly joined and serialized.
+            user_with_profile = User.objects.get(username=username)
+            # --- END FIX ---
+            
             token, created = Token.objects.get_or_create(user=user)
+            
             return Response({
                 'token': token.key,
-                'user': UserSerializer(user).data
+                # We serialize the NEW user_with_profile object
+                'user': UserSerializer(user_with_profile).data
             })
         else:
             return Response(
@@ -58,45 +69,17 @@ class ProjectViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         # This is a key step: only show projects that the logged-in user is a member of.
         return self.request.user.projects.all()
-
-class TaskViewSet(viewsets.ModelViewSet):
-    """
-    API endpoint that allows tasks to be viewed or edited.
-    """
-    queryset = Task.objects.all()
-    serializer_class = TaskSerializer
-    permission_classes = [permissions.IsAuthenticated]
-
-    def get_queryset(self):
-        # Only return tasks that belong to projects the user is a member of.
-        return Task.objects.filter(project__members=self.request.user)
-
-class AvailabilitySlotViewSet(viewsets.ModelViewSet):
-    """
-    API endpoint for creating, viewing, and deleting availability slots.
-    """
-    queryset = AvailabilitySlot.objects.all()
-    serializer_class = AvailabilitySlotSerializer
-    permission_classes = [permissions.IsAuthenticated]
-
-    def get_queryset(self):
-        # Only show a user their *own* availability slots.
-        return AvailabilitySlot.objects.filter(employee=self.request.user)
-
+    
     def perform_create(self, serializer):
-        # When a new slot is created, automatically assign it to the logged-in user.
-        serializer.save(employee=self.request.user)
-
-class ProjectViewSet(viewsets.ModelViewSet):
-    """
-    API endpoint that allows projects to be viewed or edited.
-    """
-    queryset = Project.objects.all()
-    serializer_class = ProjectSerializer
-    permission_classes = [permissions.IsAuthenticated]
-
-    def get_queryset(self):
-        return self.request.user.projects.all()
+        """
+        When a new project is created, automatically
+        add the logged-in user as a member.
+        """
+        # 1. Save the project normally (with name, description)
+        project = serializer.save()
+        
+        # 2. NOW, add the user who made the request to the 'members' list
+        project.members.add(self.request.user)
 
     # --- ADD THIS NEW FUNCTION ---
     # This creates a new URL: /api/projects/{id}/run_assignment/
@@ -136,3 +119,31 @@ class ProjectViewSet(viewsets.ModelViewSet):
             return Response(result, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
             
         return Response(result, status=status.HTTP_200_OK)
+
+class TaskViewSet(viewsets.ModelViewSet):
+    """
+    API endpoint that allows tasks to be viewed or edited.
+    """
+    queryset = Task.objects.all()
+    serializer_class = TaskSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        # Only return tasks that belong to projects the user is a member of.
+        return Task.objects.filter(project__members=self.request.user)
+
+class AvailabilitySlotViewSet(viewsets.ModelViewSet):
+    """
+    API endpoint for creating, viewing, and deleting availability slots.
+    """
+    queryset = AvailabilitySlot.objects.all()
+    serializer_class = AvailabilitySlotSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        # Only show a user their *own* availability slots.
+        return AvailabilitySlot.objects.filter(employee=self.request.user)
+
+    def perform_create(self, serializer):
+        # When a new slot is created, automatically assign it to the logged-in user.
+        serializer.save(employee=self.request.user)

@@ -19,28 +19,29 @@ class UserSerializer(serializers.ModelSerializer):
     Serializer for the built-in User model.
     We include the 'profile' we just defined.
     """
-    # This 'profile' field will nest the EmployeeProfileSerializer inside the UserSerializer
-    profile = EmployeeProfileSerializer(read_only=True)
+    # This will now nest the full profile object on read.
+    profile = EmployeeProfileSerializer()
 
     class Meta:
         model = User
-        # These are the fields we will send back and forth
         fields = ['id', 'username', 'email', 'first_name', 'last_name', 'profile']
 
 class RegisterSerializer(serializers.ModelSerializer):
     """
     A special serializer just for creating a new user.
-    It includes a password field, which the default UserSerializer hides.
     """
+    # We're manually adding the profile_data field
+    profile_data = serializers.JSONField(write_only=True, required=False, default=dict)
     password = serializers.CharField(write_only=True)
 
     class Meta:
         model = User
-        fields = ['username', 'password', 'email', 'first_name', 'last_name']
+        fields = ['username', 'password', 'email', 'first_name', 'last_name', 'profile_data']
 
     def create(self, validated_data):
-        # This function is called when we create a new user.
-        # It properly hashes the password instead of saving it as plain text.
+        # Pop the profile data out of the main user data
+        profile_data = validated_data.pop('profile_data')
+        
         user = User.objects.create_user(
             username=validated_data['username'],
             email=validated_data['email'],
@@ -48,8 +49,9 @@ class RegisterSerializer(serializers.ModelSerializer):
             first_name=validated_data.get('first_name', ''),
             last_name=validated_data.get('last_name', '')
         )
-        # We also create their blank EmployeeProfile at the same time.
-        EmployeeProfile.objects.create(user=user)
+        
+        # Create the profile and pass in the profile_data
+        EmployeeProfile.objects.create(user=user, profile_data=profile_data)
         return user
 
 # --- Project & Task Serializers ---

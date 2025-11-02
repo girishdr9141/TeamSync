@@ -40,7 +40,8 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    'rest_framework',   # For building the API
+    'rest_framework',
+    'rest_framework.authtoken',   # For building the API
     'corsheaders',      # For letting React talk to us
     'api.apps.ApiConfig', # Our new app!
 ]
@@ -130,4 +131,19 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
+    "http://localhost:5173",
 ]
+
+
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        # This tells DRF to accept 'Authorization: Token <key>' headers
+        'rest_framework.authentication.TokenAuthentication',
+        
+        # We REMOVED SessionAuthentication. This will disable CSRF checks
+        # on our API and rely only on our secure tokens.
+    ],
+    'DEFAULT_PERMISSION_CLASSES': [
+        'rest_framework.permissions.IsAuthenticated',
+    ]
+}
