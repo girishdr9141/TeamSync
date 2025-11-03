@@ -84,6 +84,8 @@ class ProjectViewSet(viewsets.ModelViewSet):
 
     # --- ADD THIS NEW FUNCTION ---
     # This creates a new URL: /api/projects/{id}/run_assignment/
+
+    
     @action(detail=True, methods=['post']) # 'detail=True' means it acts on a *single* project
     def run_assignment(self, request, pk=None):
         """
@@ -145,6 +147,42 @@ class ProjectViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(project)
         return Response(serializer.data, status=status.HTTP_200_OK)
     
+    @action(detail=True, methods=['post'])
+    def add_member(self, request, pk=None):
+        # ... (this function is already here and correct)
+        pass
+
+    # --- ADD THIS NEW FUNCTION ---
+    @action(detail=True, methods=['post'])
+    def remove_member(self, request, pk=None):
+        """
+        Removes an employee from this project by their username.
+        """
+        project = self.get_object()
+        username = request.data.get('username')
+
+        if not username:
+            return Response({'error': 'Username is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            user_to_remove = User.objects.get(username=username)
+        except User.DoesNotExist:
+            return Response({'error': 'User not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        # Don't let a user remove themselves (or the last member)
+        if user_to_remove == request.user:
+            return Response({'error': 'You cannot remove yourself from a project.'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        if project.members.count() == 1:
+            return Response({'error': 'You cannot remove the last member of a project.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Remove them from the project's member list
+        project.members.remove(user_to_remove)
+        
+        # Return the updated project data
+        serializer = self.get_serializer(project)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    
 
 class TaskViewSet(viewsets.ModelViewSet):
     """
@@ -184,6 +222,27 @@ class AvailabilitySlotViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         # When a new slot is created, automatically assign it to the logged-in user.
         serializer.save(employee=self.request.user)
+
+    @action(detail=False, methods=['post'])
+    def clear_all(self, request):
+        """
+        Deletes all availability slots for the currently logged-in user.
+        We use 'POST' because it's a destructive action.
+        """
+        try:
+            slots = AvailabilitySlot.objects.filter(employee=request.user)
+            count = slots.count()
+            slots.delete()
+
+            return Response(
+                {"status": "success", "message": f"Deleted {count} slots."},
+                status=status.HTTP_200_OK
+            )
+        except Exception as e:
+            return Response(
+                {"status": "error", "message": str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 class EmployeeProfileView(generics.RetrieveUpdateAPIView):
     """
