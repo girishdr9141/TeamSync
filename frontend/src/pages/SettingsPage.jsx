@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 
 export default function SettingsPage() {
-    const { api, user, token } = useAuth(); // We need the user to get the profile
+    const { api, user, refreshUser } = useAuth(); // We need the user to get the profile
     
     // We'll store the skills and preferences as simple strings for the inputs
     const [skills, setSkills] = useState("");
@@ -69,6 +69,7 @@ export default function SettingsPage() {
                 profile_data: new_profile_data
                 // We don't need to send 'current_workload', the serializer will ignore it
             });
+            await refreshUser();
             setMessage("Profile saved successfully!");
             // Note: We'd also need to update the user in AuthContext, but we'll do that later.
         } catch (err) {

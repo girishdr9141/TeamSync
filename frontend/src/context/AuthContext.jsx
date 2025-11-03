@@ -105,6 +105,20 @@ export const AuthProvider = ({ children }) => {
         delete api.defaults.headers.common['Authorization'];
     };
 
+    const refreshUser = async () => {
+        // This function will re-fetch the user's data from the
+        // /auth/user/ endpoint and update our global state.
+        try {
+            const response = await api.get('/auth/user/');
+            setUser(response.data);
+            localStorage.setItem('user', JSON.stringify(response.data));
+            return response.data;
+        } catch (error) {
+            console.error("Failed to refresh user", error);
+            // If it fails (e.g., token expired), log them out
+            logout();
+        }
+    };
     // --- RENDER LOGIC ---
     // If we are still loading the user from storage,
     // render nothing (or a loading spinner).
@@ -115,7 +129,7 @@ export const AuthProvider = ({ children }) => {
     // Now we are sure the token (or lack of one) is loaded.
     // We can safely render the rest of the app.
     return (
-        <AuthContext.Provider value={{ token, user, login, register, logout, api }}>
+        <AuthContext.Provider value={{ token, user, login, register, logout, api, refreshUser }}>
             {children}
         </AuthContext.Provider>
     );

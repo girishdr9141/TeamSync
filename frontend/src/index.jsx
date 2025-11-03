@@ -15,10 +15,11 @@ import RegisterPage from './pages/RegisterPage.jsx';
 import ProjectsListPage from './pages/ProjectsListPage.jsx';
 import ProjectPage from './pages/ProjectPage.jsx';
 import SettingsPage from './pages/SettingsPage.jsx';
+import DashboardPage from './pages/DashboardPage.jsx';
 
 
 // --- Page Placeholders ---
-const DashboardPage = () => <div className="text-gray-400">Your main dashboard content will go here.</div>;
+
 
 
 

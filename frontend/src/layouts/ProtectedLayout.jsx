@@ -5,6 +5,7 @@ import { Navigate, Outlet, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Button } from '@/components/ui/button';
 import { LayoutDashboard, FolderKanban, LogOut, Settings } from 'lucide-react'; // Our icons
+import { Toaster } from "@/components/Toaster"
 
 export default function ProtectedLayout() {
     const { user, logout } = useAuth();
@@ -42,7 +43,7 @@ export default function ProtectedLayout() {
                         </Button>
                     </Link>
                 </nav>
-
+            <Toaster position="top-right" />
                 {/* Footer / User Area */}
                 <div className="mt-auto">
                     <Link to="/settings">
