@@ -121,6 +121,31 @@ class ProjectViewSet(viewsets.ModelViewSet):
             
         return Response(result, status=status.HTTP_200_OK)
 
+    @action(detail=True, methods=['post'])
+    def add_member(self, request, pk=None):
+        """
+        Adds an employee to this project by their username.
+        """
+        project = self.get_object()
+        username = request.data.get('username')
+
+        if not username:
+            return Response({'error': 'Username is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            # Find the user we want to add
+            user_to_add = User.objects.get(username=username)
+        except User.DoesNotExist:
+            return Response({'error': 'User not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        # Add them to the project's member list
+        project.members.add(user_to_add)
+        
+        # Return the updated project data
+        serializer = self.get_serializer(project)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    
+
 class TaskViewSet(viewsets.ModelViewSet):
     """
     API endpoint that allows tasks to be viewed or edited.
@@ -132,6 +157,17 @@ class TaskViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         # Only return tasks that belong to projects the user is a member of.
         return Task.objects.filter(project__members=self.request.user)
+    
+    @action(detail=False, methods=['get'])
+    def my_tasks(self, request):
+        """
+        Returns all tasks assigned to the currently logged-in user.
+        """
+        # 'detail=False' means this is on the main /api/tasks/ endpoint,
+        # not a specific task.
+        my_tasks = Task.objects.filter(assigned_to=request.user, status__in=['TODO', 'IN_PROGRESS'])
+        serializer = self.get_serializer(my_tasks, many=True)
+        return Response(serializer.data)
 
 class AvailabilitySlotViewSet(viewsets.ModelViewSet):
     """
