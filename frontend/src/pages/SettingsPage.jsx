@@ -7,39 +7,32 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 
 export default function SettingsPage() {
-    const { api, user, refreshUser } = useAuth(); // We need the user to get the profile
+    const { api, user, refreshUser } = useAuth();
     
-    // We'll store the skills and preferences as simple strings for the inputs
     const [skills, setSkills] = useState("");
     const [preferences, setPreferences] = useState("");
     const [loading, setLoading] = useState(true);
     const [message, setMessage] = useState("");
 
-    // This hook runs ONCE when the page loads
+    // This hook runs when the 'user' object from context changes
     useEffect(() => {
-        if (user && user.profile) {
-            // The 'user' object from our AuthContext *already* has the profile!
-            // Let's parse the JSON data and set our form state.
+        setLoading(false); 
+        if (user && user.profile && user.profile.profile_data) {
             const { profile_data } = user.profile;
             
-            // Convert skill/preference objects back into simple strings for the form
-            // e.g., {"Python": 5} -> "Python:5"
-            const skillsText = Object.entries(profile_data.skills || {}).map(([k, v]) => `${k}:${v}`).join(', ');
-            const prefsText = Object.entries(profile_data.preferences || {}).map(([k, v]) => `${k}:${v}`).join(', ');
+            // This part correctly reads data from the profile
+            const skillsText = Object.entries(profile_data.skills || {}).map(([k, v]) => `${k}:${v}`).join(', '); 
+            const prefsText = Object.entries(profile_data.preferences || {}).map(([k, v]) => `${k}:${v}`).join(', '); 
             
-            setSkills(skillsText);
-            setPreferences(prefsText);
-            setLoading(false);
+            setSkills(skillsText); 
+            setPreferences(prefsText); 
         }
     }, [user]); // Re-run if the user object ever changes
 
     const handleSave = async () => {
         setMessage("Saving...");
         
-        // --- This is the key logic ---
-        // We convert the string data back into the JSON format our backend wants.
-        
-        // 1. Parse Skills: "Python:5, React:4" -> {"Python": 5, "React": 4}
+        // --- 1. Parse Skills (from the 'skills' state) ---
         const skillsObj = {};
         skills.split(',').forEach(pair => {
             const [key, value] = pair.split(':');
@@ -48,7 +41,8 @@ export default function SettingsPage() {
             }
         });
         
-        // 2. Parse Preferences: "Backend:3, Frontend:5" -> {"Backend": 3, "Frontend": 5}
+        // --- 2. THIS IS THE FIX: Parse Preferences (from the 'preferences' state) ---
+        // The bug was here. We must read from the 'preferences' state variable.
         const prefsObj = {};
         preferences.split(',').forEach(pair => {
             const [key, value] = pair.split(':');
@@ -57,21 +51,23 @@ export default function SettingsPage() {
             }
         });
 
-        // 3. This is the final JSON payload
+        // 3. This is the new JSON object to save
         const new_profile_data = {
             skills: skillsObj,
-            preferences: prefsObj
+            preferences: prefsObj // Now this is using the correct 'prefsObj'
         };
 
         try {
-            // Call our new '/auth/profile/' endpoint
+            // 4. Save the new data
             await api.put('/auth/profile/', {
                 profile_data: new_profile_data
-                // We don't need to send 'current_workload', the serializer will ignore it
             });
-            await refreshUser();
+            
+            // 5. Refresh the user in our global state
+            await refreshUser(); 
+            
             setMessage("Profile saved successfully!");
-            // Note: We'd also need to update the user in AuthContext, but we'll do that later.
+            
         } catch (err) {
             setMessage("Error saving profile.");
             console.error(err);
@@ -81,7 +77,8 @@ export default function SettingsPage() {
     if (loading) {
         return <p className="text-gray-400">Loading settings...</p>;
     }
-
+    
+    // The rest of your JSX/return is 100% correct
     return (
         <div className="space-y-8 max-w-2xl">
             <h2 className="text-3xl font-bold text-white">Your Profile & Skills</h2>

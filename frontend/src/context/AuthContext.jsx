@@ -3,6 +3,7 @@
 import React, { createContext, useState, useContext, useEffect } from 'react';
 import axios from 'axios';
 
+// Create the api instance outside the component
 const api = axios.create({
     baseURL: 'http://127.0.0.1:8000/api/',
 });
@@ -10,8 +11,8 @@ const api = axios.create({
 const AuthContext = createContext();
 
 export const AuthProvider = ({ children }) => {
-    const [token, setToken] = useState(null); // Start as null
-    const [user, setUser] = useState(null); // Start as null
+    const [token, setToken] = useState(null);
+    const [user, setUser] = useState(null);
     
     // --- THIS IS THE FIX ---
     // We add a loading state. The app is "loading" until we've
@@ -29,9 +30,8 @@ export const AuthProvider = ({ children }) => {
                 setUser(JSON.parse(storedUser));
                 
                 // --- CRITICAL ---
-                // Manually set the token for the *very first* request.
-                // This ensures that even if the interceptor is slow,
-                // our `api` object has the token.
+                // Manually set the auth header for the *very first* requests.
+                // This beats the race condition.
                 api.defaults.headers.common['Authorization'] = `Token ${storedToken}`;
             }
             
@@ -44,11 +44,9 @@ export const AuthProvider = ({ children }) => {
         // --- Interceptor (Same as before, but with a small change) ---
         const interceptor = api.interceptors.request.use(
             (config) => {
-                // We no longer need to read from localStorage here.
-                // We can just use the 'token' from our state.
-                // But reading from localStorage is safer in case state is slow.
+                // Read from localStorage just in case state is slow
                 const currentToken = localStorage.getItem('token');
-                if (currentToken) {
+                if (currentToken && !config.headers.Authorization) {
                     config.headers.Authorization = `Token ${currentToken}`;
                 }
                 return config;
@@ -63,8 +61,7 @@ export const AuthProvider = ({ children }) => {
         };
     }, []); // Empty array ensures this runs only ONCE on mount.
     
-    // --- (Login, Register, and Logout functions are UNCHANGED) ---
-
+    
     const login = async (username, password) => {
         try {
             const response = await api.post('/auth/login/', { username, password });
@@ -105,25 +102,25 @@ export const AuthProvider = ({ children }) => {
         delete api.defaults.headers.common['Authorization'];
     };
 
+    // --- NEW FUNCTION TO UPDATE USER IN CONTEXT ---
     const refreshUser = async () => {
-        // This function will re-fetch the user's data from the
-        // /auth/user/ endpoint and update our global state.
         try {
             const response = await api.get('/auth/user/');
-            setUser(response.data);
-            localStorage.setItem('user', JSON.stringify(response.data));
+            setUser(response.data); // Update React state
+            localStorage.setItem('user', JSON.stringify(response.data)); // Update localStorage
             return response.data;
         } catch (error) {
             console.error("Failed to refresh user", error);
-            // If it fails (e.g., token expired), log them out
-            logout();
+            logout(); // If we can't refresh, log them out
         }
     };
+
     // --- RENDER LOGIC ---
     // If we are still loading the user from storage,
-    // render nothing (or a loading spinner).
+    // render nothing. This prevents all child components (like SettingsPage)
+    // from rendering and firing off API calls too early.
     if (isLoading) {
-        return null; // Or <LoadingSpinner />
+        return null;
     }
 
     // Now we are sure the token (or lack of one) is loaded.

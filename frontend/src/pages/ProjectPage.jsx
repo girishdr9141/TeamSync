@@ -5,7 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import { useParams, Link } from 'react-router-dom';
 import { toast } from "sonner"; // For notifications
 
-// Import all the Shadcn components we need
+// Import all the Shadcn components
 import { Button } from '@/components/ui/button';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -21,8 +21,48 @@ import AvailabilityCalendar from '@/components/AvailabilityCalendar';
 // Icons
 import { Users, FileText, Clock, Brain } from 'lucide-react';
 
+// --- RemoveMemberButton Component ---
+// (We keep this separate, outside the main component)
+function RemoveMemberButton({ projectId, username, onMemberRemoved }) {
+    const { api } = useAuth(); // This hook is fine here, it's a different scope
+
+    const handleRemove = async () => {
+        try {
+            await api.post(`/projects/${projectId}/remove_member/`, { username });
+            toast.success(`User '${username}' removed from the project.`);
+            onMemberRemoved(); // Refresh the project data
+        } catch (err) {
+            toast.error(err.response?.data?.error || "Failed to remove user.");
+        }
+    };
+
+    return (
+        <AlertDialog>
+            <AlertDialogTrigger asChild>
+                <Button variant="destructive" size="sm">Remove</Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent className="bg-gray-900 border-gray-800 text-white">
+                <AlertDialogHeader>
+                    <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                        This will remove <span className="font-bold text-white">{username}</span> from the project.
+                    </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                    <AlertDialogCancel asChild>
+                        <Button variant="ghost">Cancel</Button>
+                    </AlertDialogCancel>
+                    <AlertDialogAction asChild> 
+                        <Button variant="destructive" onClick={handleRemove}>Yes, Remove</Button>
+                    </AlertDialogAction>
+                </AlertDialogFooter>
+            </AlertDialogContent>
+        </AlertDialog>
+    );
+}
+
 // --- AddMemberDialog Component ---
-// We'll define this here to keep our file simple
+// (This is also separate)
 function AddMemberDialog({ projectId, onMemberAdded }) {
     const [username, setUsername] = useState("");
     const [error, setError] = useState(null);
@@ -33,10 +73,10 @@ function AddMemberDialog({ projectId, onMemberAdded }) {
         setError(null);
         try {
             await api.post(`/projects/${projectId}/add_member/`, { username });
-            toast.success(`User '${username}' added to the project!`); // Show success
-            setIsOpen(false); // Close dialog
-            onMemberAdded(); // Refresh the project data
-            setUsername(""); // Reset form
+            toast.success(`User '${username}' added to the project!`);
+            setIsOpen(false);
+            onMemberAdded();
+            setUsername("");
         } catch (err) {
             setError(err.response?.data?.error || "Failed to add user.");
         }
@@ -59,7 +99,7 @@ function AddMemberDialog({ projectId, onMemberAdded }) {
                 <div className="py-4">
                     <Label htmlFor="username-add" className="text-gray-300">Username</Label>
                     <Input
-                        id="username-add" // Use a unique id
+                        id="username-add"
                         value={username}
                         onChange={(e) => setUsername(e.target.value)}
                         className="bg-gray-800 border-gray-700 mt-2"
@@ -71,7 +111,6 @@ function AddMemberDialog({ projectId, onMemberAdded }) {
                     <AlertDialogCancel asChild>
                         <Button variant="ghost">Cancel</Button>
                     </AlertDialogCancel>
-                    {/* We must wrap the action in asChild to prevent errors */}
                     <AlertDialogAction asChild> 
                         <Button onClick={handleAddMember} className="bg-blue-600 hover:bg-blue-700">Add Member</Button>
                     </AlertDialogAction>
@@ -87,7 +126,13 @@ export default function ProjectPage() {
     const [project, setProject] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
-    const { api } = useAuth();
+    
+    // --- THIS IS THE FIX ---
+    // We get the 'api' object
+    // We get the 'user' object and RENAME it to 'loggedInUser' to avoid the name collision.
+    const { api, user: loggedInUser } = useAuth();
+    // --- END FIX ---
+    
     const { id } = useParams();
 
     // --- Data Fetching ---
@@ -104,14 +149,14 @@ export default function ProjectPage() {
         }
     };
 
-    // --- Run AI Algorithms ---
-    const handleRunAssignment = async () => {
+    // --- (handleRunAssignment and handleRunScheduler are fine) ---
+        const handleRunAssignment = async () => {
         toast.info("Running Task Assignment Algorithm...");
         try {
             const response = await api.post(`/projects/${id}/run_assignment/`);
             console.log(response.data);
             toast.success("Assignment complete! Tasks updated.");
-            fetchProject(); // Re-fetch the project to show the new assignments
+            fetchProject(); 
         } catch (err) {
             toast.error("Algorithm failed. Check console for details.");
         }
@@ -129,10 +174,13 @@ export default function ProjectPage() {
             toast.error("Scheduler failed. Check console for details.");
         }
     };
+
     
     useEffect(() => {
-        fetchProject();
-    }, [id]);
+        if (loggedInUser) { // Wait for user to be loaded
+            fetchProject();
+        }
+    }, [id, loggedInUser]); // Re-run if user or ID changes
 
     // --- Render Logic ---
     if (loading) return <p className="text-gray-400">Loading project...</p>;
@@ -143,14 +191,13 @@ export default function ProjectPage() {
 
     return (
         <div className="space-y-8">
-            {/* Page Header */}
+            {/* ... (Header and AI Control Panel are fine) ... */}
             <div>
                 <Link to="/projects" className="text-blue-400 hover:underline">&larr; Back to all projects</Link>
                 <h2 className="text-4xl font-bold text-white mt-2">{project.name}</h2>
                 <p className="text-lg text-gray-400">{project.description}</p>
             </div>
 
-            {/* AI Control Panel */}
             <Card className="bg-gray-900 border-gray-800 text-white">
                 <CardHeader>
                     <CardTitle className="flex items-center text-2xl">
@@ -167,6 +214,7 @@ export default function ProjectPage() {
                     </Button>
                 </CardContent>
             </Card>
+
 
             {/* Main Content Area with Tabs */}
             <Tabs defaultValue="tasks" className="w-full">
@@ -190,6 +238,7 @@ export default function ProjectPage() {
                             onTaskCreated={fetchProject} 
                         />
                     </div>
+                    {/* ... (Task Table is fine) ... */}
                     <Card className="bg-gray-900 border-gray-800 text-white">
                         <Table>
                             <TableHeader>
@@ -230,17 +279,33 @@ export default function ProjectPage() {
                             <TableHeader>
                                 <TableRow className="border-gray-800 hover:bg-gray-800">
                                     <TableHead className="text-white">Username</TableHead>
-                                    {/* We will add more columns later as we build out the profile */}
+                                    <TableHead className="text-right text-white">Actions</TableHead>
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
                                 {members.length > 0 ? members.map(memberUsername => (
                                     <TableRow key={memberUsername} className="border-gray-800">
                                         <TableCell className="font-medium">{memberUsername}</TableCell>
+                                        <TableCell className="text-right">
+                                            
+                                            {/* --- THIS IS THE FIX --- */}
+                                            {/* We now compare against 'loggedInUser.username' */}
+                                            {memberUsername !== loggedInUser.username ? (
+                                                <RemoveMemberButton
+                                                    projectId={project.id}
+                                                    username={memberUsername}
+                                                    onMemberRemoved={fetchProject}
+                                                />
+                                            ) : (
+                                                <span className="text-xs text-gray-500">You</span>
+                                            )}
+                                            {/* --- END FIX --- */}
+                                            
+                                        </TableCell>
                                     </TableRow>
                                 )) : (
                                     <TableRow>
-                                        <TableCell colSpan="1" className="text-center text-gray-400 h-24">
+                                        <TableCell colSpan="2" className="text-center text-gray-400 h-24">
                                             You are the only member. Add more members to collaborate.
                                         </TableCell>
                                     </TableRow>
