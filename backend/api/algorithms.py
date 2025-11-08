@@ -6,7 +6,6 @@ import random
 import json
 from deap import base, creator, tools, algorithms
 from datetime import datetime, timedelta, time
-
 # --- TASK ASSIGNMENT ALGORITHM (Already complete) ---
 
 def run_weighted_task_assignment(project_id):
@@ -61,7 +60,7 @@ def run_weighted_task_assignment(project_id):
                 if task_category:
                     preference_score = member_prefs.get(task_category, 0)
                 
-                workload_penalty = profile.current_workload * 5
+                workload_penalty = profile.current_workload * 2  # Reduced from 5 to 2
                 final_cost = (workload_penalty) - (skill_score * 0.7) - (preference_score * 0.3)
                 
                 if final_cost < lowest_cost:
@@ -147,7 +146,7 @@ def evaluate_meeting_time(context, individual):
     
     # Find the *actual* datetime for this potential slot
     today = datetime.now().date()
-    next_monday = today + timedelta(days=-today.weekday(), weeks=1)
+    next_monday = today + timedelta(days=-today.weekday())
     
     potential_start = datetime.combine(next_monday, time(0, 0)) + timedelta(days=day_of_week, minutes=minutes_in_day)
     potential_end = potential_start + timedelta(minutes=context.duration_minutes)
@@ -158,9 +157,12 @@ def evaluate_meeting_time(context, individual):
         
         # Check if the member's slot [slot_start, slot_end]
         # completely *contains* the [potential_start, potential_end]
-        # We must make datetimes timezone-naive for a simple comparison
-        is_available = (slot_start.replace(tzinfo=None) <= potential_start and 
-                        slot_end.replace(tzinfo=None) >= potential_end)
+        # Convert to UTC for consistent comparison
+        potential_start_utc = potential_start.astimezone(slot_start.tzinfo)
+        potential_end_utc = potential_end.astimezone(slot_end.tzinfo)
+        
+        is_available = (slot_start <= potential_start_utc and 
+                       slot_end >= potential_end_utc)
         
         if is_available:
             available_members.add(member_id)
@@ -178,6 +180,8 @@ def run_genetic_scheduler(project_id, duration_hours):
     context = SchedulerContext(project_id, duration_minutes)
     if context.member_count == 0:
         return {"status": "error", "message": "No members in project."}
+
+    random.seed(project_id)
 
     # 2. Setup the Genetic Algorithm (DEAP)
     # These create the classes *once*. The warnings in your log are normal.
@@ -228,7 +232,7 @@ def run_genetic_scheduler(project_id, duration_hours):
     minutes_in_day = start_minutes_from_week_start % (24 * 60)
     
     today = datetime.now().date()
-    next_monday = today + timedelta(days=-today.weekday(), weeks=1)
+    next_monday = today + timedelta(days=-today.weekday())
     best_start_time = datetime.combine(next_monday, time(0, 0)) + timedelta(days=day_of_week, minutes=minutes_in_day)
     best_end_time = best_start_time + timedelta(minutes=duration_minutes)
 

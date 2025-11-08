@@ -146,11 +146,6 @@ class ProjectViewSet(viewsets.ModelViewSet):
         # Return the updated project data
         serializer = self.get_serializer(project)
         return Response(serializer.data, status=status.HTTP_200_OK)
-    
-    @action(detail=True, methods=['post'])
-    def add_member(self, request, pk=None):
-        # ... (this function is already here and correct)
-        pass
 
     # --- ADD THIS NEW FUNCTION ---
     @action(detail=True, methods=['post'])
