@@ -47,21 +47,36 @@ def run_weighted_task_assignment(project_id):
                 profile = profiles[member.id]
                 profile_data = profile.profile_data
                 
-                skill_score = 0
+                # --- NORMALIZATION ---
+                # Get raw scores
+                raw_skill_score = 0
                 member_skills = profile_data.get('skills', {})
-                if not required_skills:
-                    skill_score = 1
-                else:
+                if required_skills:
                     for skill in required_skills:
-                        skill_score += member_skills.get(skill, 0)
-                
-                preference_score = 0
+                        raw_skill_score += member_skills.get(skill, 0)
+
+                raw_preference_score = 0
                 member_prefs = profile_data.get('preferences', {})
                 if task_category:
-                    preference_score = member_prefs.get(task_category, 0)
+                    raw_preference_score = member_prefs.get(task_category, 0)
+
+                # Normalize scores (assuming max skill/pref value is 5)
+                # If a task requires 3 skills, max possible score is 15.
+                max_skill_score = len(required_skills) * 5 if required_skills else 1
+                max_preference_score = 5 # Assuming preference is a single value from 1-5
+
+                # Avoid division by zero
+                normalized_skill = (raw_skill_score / max_skill_score) if max_skill_score > 0 else 0
+                normalized_preference = (raw_preference_score / max_preference_score) if max_preference_score > 0 else 0
                 
-                workload_penalty = profile.current_workload * 2  # Reduced from 5 to 2
-                final_cost = (workload_penalty) - (skill_score * 0.7) - (preference_score * 0.3)
+                # If no skills are required, everyone is a perfect fit from a skills perspective
+                if not required_skills:
+                    normalized_skill = 1.0
+
+                workload_penalty = profile.current_workload * 2
+                
+                # Calculate final cost using NORMALIZED scores
+                final_cost = (workload_penalty) - (normalized_skill * 0.7) - (normalized_preference * 0.3)
                 
                 if final_cost < lowest_cost:
                     lowest_cost = final_cost
