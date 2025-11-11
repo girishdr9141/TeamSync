@@ -1,4 +1,4 @@
-# CTCR - Collaborative Task and Resource Coordination
+# TeamSync
 
 A web application for managing projects, assigning tasks to employees, and scheduling meetings using intelligent algorithms.
 
