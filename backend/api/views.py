@@ -1,7 +1,8 @@
 # api/views.py
 
-from django.contrib.auth.models import User # You already added this!
+from django.contrib.auth.models import User
 from django.contrib.auth import authenticate
+from django.utils import timezone # --- V2.0: Needed for deadline checks ---
 from rest_framework import generics, permissions, status, viewsets
 from rest_framework.response import Response
 from rest_framework.decorators import action
@@ -12,10 +13,10 @@ from .serializers import (
     RegisterSerializer, UserSerializer, ProjectSerializer, 
     TaskSerializer, AvailabilitySlotSerializer, EmployeeProfileSerializer,ProfileUpdateSerializer
 )
-from .models import Project, Task, AvailabilitySlot, EmployeeProfile
 from . import algorithms
+from .utils import DateCalculator # --- V2.0: Import our new utility ---
 
-# --- Auth Views (You already built these!) ---
+# --- Auth Views (No Changes) ---
 
 class RegisterView(generics.CreateAPIView):
     queryset = User.objects.all()
@@ -32,17 +33,11 @@ class LoginView(APIView):
         user = authenticate(username=username, password=password)
         
         if user:
-            # --- THIS IS THE FIX ---
-            # We re-fetch the user object to make sure the 'profile'
-            # is correctly joined and serialized.
             user_with_profile = User.objects.get(username=username)
-            # --- END FIX ---
-            
             token, created = Token.objects.get_or_create(user=user)
             
             return Response({
                 'token': token.key,
-                # We serialize the NEW user_with_profile object
                 'user': UserSerializer(user_with_profile).data
             })
         else:
@@ -57,7 +52,7 @@ class UserDetailView(generics.RetrieveAPIView):
     def get_object(self):
         return self.request.user
 
-# --- NEW VIEWS (Add everything below this line) ---
+# --- ProjectViewSet (Modified) ---
 
 class ProjectViewSet(viewsets.ModelViewSet):
     """
@@ -65,116 +60,72 @@ class ProjectViewSet(viewsets.ModelViewSet):
     """
     queryset = Project.objects.all()
     serializer_class = ProjectSerializer
-    permission_classes = [permissions.IsAuthenticated] # Only logged-in users can see projects
+    permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        # This is a key step: only show projects that the logged-in user is a member of.
         return self.request.user.projects.all()
     
+    # --- V2.0 MODIFICATION ---
+    # We now set the 'leader' on creation.
     def perform_create(self, serializer):
         """
         When a new project is created, automatically
-        add the logged-in user as a member.
+        add the logged-in user as a member AND set them as the leader.
         """
-        # 1. Save the project normally (with name, description)
-        project = serializer.save()
+        # 1. Save the project, passing the user as the leader
+        project = serializer.save(leader=self.request.user)
         
-        # 2. NOW, add the user who made the request to the 'members' list
+        # 2. Add the user (now leader) to the 'members' list
         project.members.add(self.request.user)
 
-    # --- ADD THIS NEW FUNCTION ---
-    # This creates a new URL: /api/projects/{id}/run_assignment/
-
+    # --- (No changes to your @actions: run_assignment, run_scheduler, add_member, remove_member) ---
     
-    @action(detail=True, methods=['post']) # 'detail=True' means it acts on a *single* project
+    @action(detail=True, methods=['post'])
     def run_assignment(self, request, pk=None):
-        """
-        Runs the SoSTA/Weighted Scoring task assignment algorithm
-        for this project.
-        """
-        project = self.get_object() # This gets the project by its ID (pk)
-        
-        # Call our algorithm function
+        project = self.get_object()
         result = algorithms.run_weighted_task_assignment(project.id)
-        
         if result['status'] == 'error':
             return Response(result, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-        
         return Response(result, status=status.HTTP_200_OK)
 
-    # --- ADD THIS NEW FUNCTION ---
-    # This creates a new URL: /api/projects/{id}/run_scheduler/
     @action(detail=True, methods=['post'])
     def run_scheduler(self, request, pk=None):
-        """
-        Runs the Genetic Algorithm to find the best meeting time
-        for this project.
-        """
         project = self.get_object()
-        
-        # We'll expect the React app to send the duration in the POST request
         duration = request.data.get('duration_hours', 1) 
-        
-        # Call our algorithm function
         result = algorithms.run_genetic_scheduler(project.id, duration)
-        
         if result['status'] == 'error':
             return Response(result, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-            
         return Response(result, status=status.HTTP_200_OK)
 
     @action(detail=True, methods=['post'])
     def add_member(self, request, pk=None):
-        """
-        Adds an employee to this project by their username.
-        """
         project = self.get_object()
         username = request.data.get('username')
-
         if not username:
             return Response({'error': 'Username is required.'}, status=status.HTTP_400_BAD_REQUEST)
-
         try:
-            # Find the user we want to add
             user_to_add = User.objects.get(username=username)
         except User.DoesNotExist:
             return Response({'error': 'User not found.'}, status=status.HTTP_404_NOT_FOUND)
-
-        # Add them to the project's member list
         project.members.add(user_to_add)
-        
-        # Return the updated project data
         serializer = self.get_serializer(project)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
-    # --- ADD THIS NEW FUNCTION ---
     @action(detail=True, methods=['post'])
     def remove_member(self, request, pk=None):
-        """
-        Removes an employee from this project by their username.
-        """
         project = self.get_object()
         username = request.data.get('username')
-
         if not username:
             return Response({'error': 'Username is required.'}, status=status.HTTP_400_BAD_REQUEST)
-
         try:
             user_to_remove = User.objects.get(username=username)
         except User.DoesNotExist:
             return Response({'error': 'User not found.'}, status=status.HTTP_404_NOT_FOUND)
-
-        # Don't let a user remove themselves (or the last member)
         if user_to_remove == request.user:
             return Response({'error': 'You cannot remove yourself from a project.'}, status=status.HTTP_400_BAD_REQUEST)
-        
         if project.members.count() == 1:
             return Response({'error': 'You cannot remove the last member of a project.'}, status=status.HTTP_400_BAD_REQUEST)
-
-        # Remove them from the project's member list
         project.members.remove(user_to_remove)
-        
-        # Return the updated project data
         serializer = self.get_serializer(project)
         return Response(serializer.data, status=status.HTTP_200_OK)
     
@@ -188,47 +139,133 @@ class TaskViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        # Only return tasks that belong to projects the user is a member of.
         return Task.objects.filter(project__members=self.request.user)
     
+    # --- V2.0 NEW METHOD (Permission Check) ---
+    def create(self, request, *args, **kwargs):
+        """
+        Intercepts the 'create' action to add a permission check.
+        Only the Project Leader can create tasks.
+        """
+        # 1. Get the project ID from the incoming data
+        project_id = request.data.get('project')
+        if not project_id:
+            return Response({"error": "Project ID is required."}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # 2. Get the project object
+        try:
+            project = Project.objects.get(id=project_id)
+        except Project.DoesNotExist:
+            return Response({"error": "Project not found."}, status=status.HTTP_404_NOT_FOUND)
+            
+        # 3. *** THE V2.0 PERMISSION CHECK ***
+        if project.leader != request.user:
+            return Response(
+                {"error": "Only the project leader can add tasks."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        # 4. If the check passes, proceed with creation as normal
+        return super().create(request, *args, **kwargs)
+
+    # --- V2.0 NEW @ACTION (75% Rule) ---
+    @action(detail=True, methods=['post'])
+    def set_progress(self, request, pk=None):
+        """
+        Allows the assigned user to update the progress of their task.
+        Implements the "75% Rule" for deadline extensions.
+        """
+        task = self.get_object()
+        user = request.user
+        
+        # 1. Permission Check: Only the assigned user can update progress
+        if task.assigned_to != user:
+            return Response(
+                {"error": "You are not assigned to this task."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        # 2. Get and validate new progress value
+        new_progress = request.data.get('progress')
+        try:
+            new_progress = int(new_progress)
+            if new_progress not in [0, 25, 50, 75, 100]:
+                raise ValueError()
+        except (TypeError, ValueError):
+            return Response(
+                {"error": "Invalid progress value. Must be one of: 0, 25, 50, 75, 100."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        old_progress = task.progress
+        extension_message = ""
+        
+        # 3. --- The "75% Rule" Logic ---
+        # Check if...
+        #   a) The task has a deadline set
+        #   b) We are crossing the 75% threshold for the *first time*
+        #   c) It is *before* the original deadline
+        if (task.due_date and 
+            old_progress < 75 and 
+            new_progress >= 75 and 
+            timezone.now() < task.due_date):
+            
+            # Calculate extension (20% of estimated hours)
+            extension_hours = task.estimated_hours * 0.20
+            
+            # Use our new utility to add *business hours*
+            calculator = DateCalculator()
+            # We extend from the *original* due date
+            new_due_date = calculator.add_business_hours(task.due_date, extension_hours)
+            
+            task.due_date = new_due_date
+            extension_message = (
+                f"Bonus! Deadline extended by {extension_hours:.1f} "
+                f"business hours to {new_due_date.strftime('%Y-%m-%d %H:%M')}."
+            )
+        
+        # 4. Update task status and progress
+        task.progress = new_progress
+        if new_progress == 100:
+            task.status = 'DONE'
+        elif task.status == 'TODO':
+            task.status = 'IN_PROGRESS'
+        
+        task.save()
+        
+        # 5. Return response
+        response_data = TaskSerializer(task).data
+        if extension_message:
+            # Add our bonus message to the response
+            response_data['message'] = extension_message
+            
+        return Response(response_data, status=status.HTTP_200_OK)
+
+    # --- (No changes to your @action: my_tasks) ---
     @action(detail=False, methods=['get'])
     def my_tasks(self, request):
-        """
-        Returns all tasks assigned to the currently logged-in user.
-        """
-        # 'detail=False' means this is on the main /api/tasks/ endpoint,
-        # not a specific task.
         my_tasks = Task.objects.filter(assigned_to=request.user, status__in=['TODO', 'IN_PROGRESS'])
         serializer = self.get_serializer(my_tasks, many=True)
         return Response(serializer.data)
 
+# --- AvailabilitySlotViewSet (No Changes) ---
 class AvailabilitySlotViewSet(viewsets.ModelViewSet):
-    """
-    API endpoint for creating, viewing, and deleting availability slots.
-    """
     queryset = AvailabilitySlot.objects.all()
     serializer_class = AvailabilitySlotSerializer
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        # Only show a user their *own* availability slots.
         return AvailabilitySlot.objects.filter(employee=self.request.user)
 
     def perform_create(self, serializer):
-        # When a new slot is created, automatically assign it to the logged-in user.
         serializer.save(employee=self.request.user)
 
     @action(detail=False, methods=['post'])
     def clear_all(self, request):
-        """
-        Deletes all availability slots for the currently logged-in user.
-        We use 'POST' because it's a destructive action.
-        """
         try:
             slots = AvailabilitySlot.objects.filter(employee=request.user)
             count = slots.count()
             slots.delete()
-
             return Response(
                 {"status": "success", "message": f"Deleted {count} slots."},
                 status=status.HTTP_200_OK
@@ -239,15 +276,11 @@ class AvailabilitySlotViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
+# --- EmployeeProfileView (No Changes) ---
 class EmployeeProfileView(generics.RetrieveUpdateAPIView):
-    """
-    API endpoint to Get and Update the logged-in user's profile.
-    """
     queryset = EmployeeProfile.objects.all()
     serializer_class = ProfileUpdateSerializer
     permission_classes = [permissions.IsAuthenticated]
 
     def get_object(self):
-        # This view doesn't take an ID.
-        # It just finds the profile associated with the user making the request.
         return self.request.user.profile

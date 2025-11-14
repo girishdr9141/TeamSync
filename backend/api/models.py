@@ -1,6 +1,7 @@
 # We'll use the built-in User model for logins
 from django.contrib.auth.models import User 
 from django.db import models
+from django.utils import timezone # We'll need this for deadlines
 
 # --- Model 1: EmployeeProfile ---
 # Extends the built-in User to store AI-specific data
@@ -17,6 +18,10 @@ class EmployeeProfile(models.Model):
     # This tracks the total 'estimated_hours' of tasks assigned to this employee.
     current_workload = models.IntegerField(default=0) 
 
+    # --- V2.0 FIELD ---
+    # Field for the "Strike System" (Feature #4)
+    strike_count = models.IntegerField(default=0, help_text="Number of missed deadlines.")
+
     def __str__(self):
         return f"{self.user.username}'s Profile"
 
@@ -28,6 +33,18 @@ class Project(models.Model):
     
     # A project can have many employees, and an employee can be on many projects
     members = models.ManyToManyField(User, related_name="projects")
+
+    # --- V2.0 FIELD ---
+    # Field for the "Project Leader" (Feature #1)
+    # We use SET_NULL so if a leader's account is deleted, the project isn't.
+    leader = models.ForeignKey(
+        User, 
+        related_name="led_projects", 
+        on_delete=models.SET_NULL, 
+        null=True, 
+        blank=True,
+        help_text="The user who created and manages the project."
+    )
 
     def __str__(self):
         return self.name
@@ -54,10 +71,29 @@ class Task(models.Model):
     #   "category": "Frontend" }
     task_data = models.JSONField(default=dict)
     
+    # --- V2.0 CHOICES & FIELDS ---
+
+    # For "Task Progress" (Feature #2)
+    PROGRESS_CHOICES = [
+        (0, 'Not Started'),
+        (25, '25%'),
+        (50, '50%'),
+        (75, '75%'),
+        (100, 'Done'),
+    ]
+    progress = models.IntegerField(choices=PROGRESS_CHOICES, default=0, help_text="Task completion percentage.")
+
+    # For "Deadline" (Feature #3)
+    # This will be set by the algorithm when a task is assigned.
+    due_date = models.DateTimeField(null=True, blank=True, help_text="The calculated deadline for the task.")
+
+    # --- V2.0 MODIFIED STATUS ---
+    # We've added 'OVERDU' for the "Strike System" (Feature #4)
     STATUS_CHOICES = [
         ('TODO', 'To Do'),
         ('IN_PROGRESS', 'In Progress'),
         ('DONE', 'Done'),
+        ('OVERDUE', 'Overdue'), # Prevents multiple strikes for one task
     ]
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='TODO')
 

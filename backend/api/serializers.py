@@ -12,14 +12,14 @@ class EmployeeProfileSerializer(serializers.ModelSerializer):
     """
     class Meta:
         model = EmployeeProfile
-        fields = ['profile_data', 'current_workload']
+        # --- V2.0: Added 'strike_count' ---
+        fields = ['profile_data', 'current_workload', 'strike_count']
 
 class UserSerializer(serializers.ModelSerializer):
     """
     Serializer for the built-in User model.
     We include the 'profile' we just defined.
     """
-    # This will now nest the full profile object on read.
     profile = EmployeeProfileSerializer()
 
     class Meta:
@@ -29,8 +29,8 @@ class UserSerializer(serializers.ModelSerializer):
 class RegisterSerializer(serializers.ModelSerializer):
     """
     A special serializer just for creating a new user.
+    (No V2.0 changes needed here, defaults are correct)
     """
-    # We're manually adding the profile_data field
     profile_data = serializers.JSONField(write_only=True, required=False, default=dict)
     password = serializers.CharField(write_only=True)
 
@@ -39,7 +39,6 @@ class RegisterSerializer(serializers.ModelSerializer):
         fields = ['username', 'password', 'email', 'first_name', 'last_name', 'profile_data']
 
     def create(self, validated_data):
-        # Pop the profile data out of the main user data
         profile_data = validated_data.pop('profile_data')
         
         user = User.objects.create_user(
@@ -50,7 +49,7 @@ class RegisterSerializer(serializers.ModelSerializer):
             last_name=validated_data.get('last_name', '')
         )
         
-        # Create the profile and pass in the profile_data
+        # 'strike_count' will correctly default to 0
         EmployeeProfile.objects.create(user=user, profile_data=profile_data)
         return user
 
@@ -60,33 +59,44 @@ class TaskSerializer(serializers.ModelSerializer):
     """
     Serializer for the Task model.
     """
-    # This tells DRF to use the user's string representation (their username)
-    # instead of just their ID.
     assigned_to = serializers.StringRelatedField(read_only=True)
 
     class Meta:
         model = Task
-        # We must now list all fields explicitly
+        # --- V2.0: Added 'progress' and 'due_date' ---
+        # These are now required for our frontend dashboards.
         fields = [
             'id', 'project', 'title', 'description', 
-            'assigned_to', 'estimated_hours', 'task_data', 'status'
+            'assigned_to', 'estimated_hours', 'task_data', 'status',
+            'progress', 'due_date' # <-- V2.0 FIELDS ADDED
         ]
 
-# --- THIS IS THE UPDATED PROJECT SERIALIZER ---
 class ProjectSerializer(serializers.ModelSerializer):
     """
     Serializer for the Project model.
     """
-    # This nests all related tasks (using the new TaskSerializer)
     tasks = TaskSerializer(many=True, read_only=True)
-    
-    # This will show the usernames (e.g., "testone") instead of IDs
     members = serializers.StringRelatedField(many=True, read_only=True)
+
+    # --- V2.0: Added 'leader' (ID) and 'leader_username' (string) ---
+    
+    # 'leader' will return the ID. This is what our frontend needs
+    # for the permission check (loggedInUser.id === project.leader)
+    leader = serializers.PrimaryKeyRelatedField(read_only=True)
+    
+    # 'leader_username' will return the string. This is what our frontend
+    # needs to display the "(Leader)" badge in the members list.
+    leader_username = serializers.StringRelatedField(source='leader')
+    # --- END V2.0 ---
 
     class Meta:
         model = Project
-        # We explicitly list the fields
-        fields = ['id', 'name', 'description', 'members', 'tasks']
+        # --- V2.0: Added 'leader' and 'leader_username' to fields ---
+        fields = [
+            'id', 'name', 'description', 
+            'leader', 'leader_username', # <-- V2.0 FIELDS ADDED
+            'members', 'tasks'
+        ]
 
 
 # --- Scheduling Serializer ---
@@ -94,8 +104,8 @@ class ProjectSerializer(serializers.ModelSerializer):
 class AvailabilitySlotSerializer(serializers.ModelSerializer):
     """
     Serializer for the AvailabilitySlot model.
+    (No V2.0 changes needed)
     """
-    # We'll make 'employee' hidden on create, and set it to the logged-in user automatically.
     employee = serializers.PrimaryKeyRelatedField(read_only=True)
 
     class Meta:
@@ -106,5 +116,7 @@ class AvailabilitySlotSerializer(serializers.ModelSerializer):
 class ProfileUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = EmployeeProfile
-        # We only want to allow the user to update these two fields
-        fields = ['profile_data', 'current_workload']
+        # --- V2.0: CRITICAL SECURITY FIX ---
+        # We must not allow a user to update their own workload or strike count.
+        # Those are managed by the system.
+        fields = ['profile_data']
