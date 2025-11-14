@@ -13,10 +13,6 @@ const AuthContext = createContext();
 export const AuthProvider = ({ children }) => {
     const [token, setToken] = useState(null);
     const [user, setUser] = useState(null);
-    
-    // --- THIS IS THE FIX ---
-    // We add a loading state. The app is "loading" until we've
-    // checked localStorage and set up our interceptor.
     const [isLoading, setIsLoading] = useState(true);
 
     useEffect(() => {
@@ -29,9 +25,7 @@ export const AuthProvider = ({ children }) => {
                 setToken(storedToken);
                 setUser(JSON.parse(storedUser));
                 
-                // --- CRITICAL ---
                 // Manually set the auth header for the *very first* requests.
-                // This beats the race condition.
                 api.defaults.headers.common['Authorization'] = `Token ${storedToken}`;
             }
             
@@ -41,10 +35,9 @@ export const AuthProvider = ({ children }) => {
         
         loadUserFromStorage();
 
-        // --- Interceptor (Same as before, but with a small change) ---
+        // This interceptor automatically adds the token to all future requests.
         const interceptor = api.interceptors.request.use(
             (config) => {
-                // Read from localStorage just in case state is slow
                 const currentToken = localStorage.getItem('token');
                 if (currentToken && !config.headers.Authorization) {
                     config.headers.Authorization = `Token ${currentToken}`;
@@ -64,6 +57,8 @@ export const AuthProvider = ({ children }) => {
     
     const login = async (username, password) => {
         try {
+            // --- THIS IS THE FIX ---
+            // The URL must be '/auth/login/' (with no '/1')
             const response = await api.post('/auth/login/', { username, password });
             const { token, user } = response.data;
             
@@ -84,7 +79,11 @@ export const AuthProvider = ({ children }) => {
 
     const register = async (username, password, email) => {
         try {
+            // --- THIS IS THE FIX ---
+            // The URL must be '/auth/register/' (with no '/1')
             await api.post('/auth/register/', { username, password, email });
+            
+            // If registration is successful, automatically log them in
             return await login(username, password);
         } catch (error) {
             console.error("Registration failed:", error.response?.data);
@@ -102,7 +101,7 @@ export const AuthProvider = ({ children }) => {
         delete api.defaults.headers.common['Authorization'];
     };
 
-    // --- NEW FUNCTION TO UPDATE USER IN CONTEXT ---
+    // This function updates the user info in our context
     const refreshUser = async () => {
         try {
             const response = await api.get('/auth/user/');
@@ -115,16 +114,11 @@ export const AuthProvider = ({ children }) => {
         }
     };
 
-    // --- RENDER LOGIC ---
-    // If we are still loading the user from storage,
-    // render nothing. This prevents all child components (like SettingsPage)
-    // from rendering and firing off API calls too early.
+    // Don't render the app until we've checked for a token.
     if (isLoading) {
         return null;
     }
 
-    // Now we are sure the token (or lack of one) is loaded.
-    // We can safely render the rest of the app.
     return (
         <AuthContext.Provider value={{ token, user, login, register, logout, api, refreshUser }}>
             {children}

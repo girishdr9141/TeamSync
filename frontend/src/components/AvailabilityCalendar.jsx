@@ -107,10 +107,15 @@ export default function AvailabilityCalendar() {
             <FullCalendar
                 plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
                 initialView="timeGridWeek"
+                locale="en-GB"
                 headerToolbar={{
                     left: 'prev,next today',
                     center: 'title',
                     right: 'dayGridMonth,timeGridWeek,timeGridDay'
+                }}
+                dayHeaderFormat={{
+                    day: '2-digit',
+                    month: '2-digit'
                 }}
                 selectable={true}
                 select={handleSelect}
