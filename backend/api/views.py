@@ -168,6 +168,29 @@ class TaskViewSet(viewsets.ModelViewSet):
         # 4. If the check passes, proceed with creation as normal
         return super().create(request, *args, **kwargs)
 
+    # --- V4.0 NEW METHOD (Permission Check) ---
+    def destroy(self, request, *args, **kwargs):
+        """
+        Intercepts the 'delete' action to add a permission check.
+        Only the Project Leader can delete tasks.
+        """
+        # 1. Get the task object
+        task = self.get_object()
+        
+        # 2. Get the project from the task
+        project = task.project
+        
+        # 3. *** THE V4.0 PERMISSION CHECK ***
+        if project.leader != request.user:
+            return Response(
+                {"error": "Only the project leader can delete tasks."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+            
+        # 4. If the check passes, proceed with deletion as normal
+        return super().destroy(request, *args, **kwargs)
+    # --- END V4.0 ---
+
     # --- V2.0 NEW @ACTION (75% Rule) ---
     @action(detail=True, methods=['post'])
     def set_progress(self, request, pk=None):

@@ -5,7 +5,12 @@ from .models import Project, Task, EmployeeProfile, AvailabilitySlot
 from django.contrib.auth.models import User
 from django.utils import timezone # For getting 'now()' when setting deadlines
 from .utils import DateCalculator # Our new business-aware date tool
-# --- END V2.0 IMPORTS ---
+
+# --- V4.0 IMPORTS ---
+# We need these for our new dynamic workload query
+from django.db.models import Sum, F, FloatField, Q
+from django.db.models.functions import Coalesce
+# --- END V4.0 IMPORTS ---
 
 import random
 import json
@@ -30,14 +35,14 @@ MAX_PREFERENCE_LEVEL = 5   # Assuming preference levels are 0-5
 
 def run_weighted_task_assignment(project_id):
     """
-    V2.0 - SoSTA/Weighted Scoring algorithm.
+    V4.0 - SoSTA/Weighted Scoring algorithm.
+    - DYNAMIC WORKLOAD: Calculates 'remaining_workload' in real-time.
     - Filters out "fired" employees (>= 5 strikes).
     - Calculates and sets a business-aware deadline for tasks.
-    - FIX: Implements robust normalization for workload, skills, and preferences,
-           and uses a cost-based formula (Workload_cost + Skill_mismatch_cost + Preference_mismatch_cost).
+    - Uses a cost-based formula (Workload_cost + Skill_mismatch_cost + Preference_mismatch_cost).
     """
     
-    print(f"--- RUNNING V2.0 TASK ASSIGNMENT for Project {project_id} ---")
+    print(f"--- RUNNING V4.0 TASK ASSIGNMENT for Project {project_id} ---")
 
     calculator = DateCalculator() # Instantiate our calculator utility once
 
@@ -70,13 +75,45 @@ def run_weighted_task_assignment(project_id):
         profiles_map = {member.id: member.profile for member in eligible_members}
         assignments_made = []
 
-        # --- Calculate max_workload ONCE for normalization across all tasks ---
-        # Ensure we only consider eligible members' workloads
-        max_workload = max(
-            [m.profile.current_workload for m in eligible_members] or [0] # Handle case where all workloads are 0
+        # --- V4.0: DYNAMIC WORKLOAD CALCULATION ---
+        print("[V4.0] Calculating real-time remaining workloads for eligible members...")
+        
+        eligible_member_ids = [m.id for m in eligible_members]
+        
+        # This one query calculates the remaining work for ALL eligible members
+        # It groups all non-completed tasks by user and sums their remaining work
+        workload_data = Task.objects.filter(
+            assigned_to__id__in=eligible_member_ids,
+            progress__lt=100 # Only count tasks that are not 100% done
+        ).annotate(
+            # Calculate remaining work for *each* task: hours * (1 - progress_percent)
+            remaining_work_per_task=F('estimated_hours') * (1.0 - F('progress') / 100.0)
+        ).values(
+            'assigned_to' # Group by user
+        ).annotate(
+            # Sum the remaining work for that user
+            total_remaining_workload=Coalesce(
+                Sum('remaining_work_per_task', output_field=FloatField()), 
+                0.0 # Use Coalesce to turn NULL sums (no tasks) into 0.0
+            )
+        ).values(
+            'assigned_to', 'total_remaining_workload' # Select the user ID and their total
         )
-        print(f"Calculated maximum workload among eligible members: {max_workload} hours.")
-        # --- END max_workload calculation ---
+        
+        # Create a lookup map for workloads: {member_id: remaining_workload}
+        # Start by defaulting everyone to 0.0
+        member_workloads = {member_id: 0.0 for member_id in eligible_member_ids}
+        # Then, fill in the calculated workloads from the query
+        for item in workload_data:
+            member_workloads[item['assigned_to']] = item['total_remaining_workload']
+
+        print(f"[V4.0] Calculated workloads: {member_workloads}")
+
+        # Now, calculate max_workload from our new in-memory dictionary
+        max_workload = max(member_workloads.values() or [0.0]) # Use 0.0 to handle empty list
+        print(f"[V4.0] Initial maximum remaining workload: {max_workload:.2f} hours.")
+        # --- END V4.0 WORKLOAD CALCULATION ---
+
 
         # 2. THE GREEDY ASSIGNMENT LOGIC
         for task in tasks:
@@ -92,11 +129,17 @@ def run_weighted_task_assignment(project_id):
                 profile = profiles_map[member.id]
                 profile_data = profile.profile_data # Assuming this is a JSONField
                 
+                # --- V4.0 CHANGE: Get REAL-TIME workload ---
+                # Get the workload from our in-memory map
+                current_remaining_workload = member_workloads[member.id]
+                # --- END V4.0 CHANGE ---
+                
                 # --- START: REVISED NORMALIZATION & COST FORMULA INTEGRATION ---
                 
                 # A. Calculate Normalized Workload Cost (Range 0 - WEIGHT_WORKLOAD)
                 if max_workload > 0:
-                    workload_ratio = profile.current_workload / max_workload
+                    # Use the new dynamic workload
+                    workload_ratio = current_remaining_workload / max_workload
                 else:
                     workload_ratio = 0 # If all workloads are zero, everyone has 0 workload cost
                 workload_cost = workload_ratio * WEIGHT_WORKLOAD
@@ -148,9 +191,9 @@ def run_weighted_task_assignment(project_id):
                 
                 # --- END: REVISED NORMALIZATION & COST FORMULA INTEGRATION ---
 
-                # --- DEBUGGING OUTPUT (Highly Recommended for Algorithm Tuning) ---
+                # --- DEBUGGING OUTPUT (V4.0 Updated) ---
                 print(
-                    f"  - Task '{task.title}' for Member: {member.username} (Workload: {profile.current_workload}h) "
+                    f"  - Task '{task.title}' for Member: {member.username} (Remaining Workload: {current_remaining_workload:.1f}h) "
                     f"--> FINAL_COST: {final_cost:.2f} "
                     f"(W:{workload_cost:.2f}, S:{skill_cost:.2f}, P:{pref_cost:.2f})"
                 )
@@ -170,12 +213,20 @@ def run_weighted_task_assignment(project_id):
                 # --- END V2.0 ---
                 
                 task.assigned_to = best_member
-                task.status = 'IN_PROGRESS'
+                task.status = 'IN_PROGRESS' # As per V2.0 logic
+                task.progress = 0 # A new task always starts at 0
                 task.save() 
 
-                profile = profiles_map[best_member.id] # Use the cached profile
-                profile.current_workload += task.estimated_hours
-                profile.save() 
+                # --- V4.0 DYNAMIC WORKLOAD UPDATE ---
+                # We no longer save to profile. We update our in-memory map
+                # for the next task's calculation in this *same run*.
+                
+                # A new task (0% progress) adds its full duration to the workload
+                member_workloads[best_member.id] += task.estimated_hours
+                
+                # CRITICAL: Update max_workload for the next loop's normalization
+                max_workload = max(member_workloads.values() or [0.0])
+                # --- END V4.0 ---
                 
                 # --- V2.0: Updated log message ---
                 assignment_msg = (
@@ -184,7 +235,8 @@ def run_weighted_task_assignment(project_id):
                 )
                 assignments_made.append(assignment_msg)
                 print(assignment_msg)
-                # --- END V2.0 ---
+                # --- V4.0: New log message ---
+                print(f"   -> [V4.0] Updated {best_member.username}'s in-memory workload to: {member_workloads[best_member.id]:.1f}h. New max_workload: {max_workload:.1f}h")
             else:
                 print(f"WARNING: Could not find any eligible member for task '{task.title}' after evaluation. Task remains unassigned.")
 
@@ -196,14 +248,16 @@ def run_weighted_task_assignment(project_id):
         return {"status": "error", "message": f"Project with ID {project_id} not found."}
     except Exception as e:
         print(f"CRITICAL ERROR in task assignment: {e}")
+        import traceback
+        traceback.print_exc() # Print full stack trace for debugging
         return {"status": "error", "message": f"An unexpected error occurred: {str(e)}"}
 # --- MEETING SCHEDULER (GENETIC ALGORITHM) ---
 # --- NO CHANGES BELOW THIS LINE ---
 
 # We'll define the search space: Weekdays (Mon-Fri), 9am to 5pm (in minutes from midnight)
 SEARCH_SPACE_START_MINUTE = 9 * 60  # 9:00 AM
-SEARCH_SPACE_END_MINUTE = 17 * 60   # 5:00 PM
-MEETING_INCREMENT_MINUTES = 15      # Check times every 15 mins
+SEARCH_SPACE_END_MINUTE = 17 * 60  # 5:00 PM
+MEETING_INCREMENT_MINUTES = 15     # Check times every 15 mins
 POPULATION_SIZE = 50
 GENERATIONS = 40
 CXPB, MUTPB = 0.5, 0.2 # Crossover and Mutation probabilities

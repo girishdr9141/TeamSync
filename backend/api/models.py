@@ -15,8 +15,10 @@ class EmployeeProfile(models.Model):
     #   "preferences": {"Frontend": 5, "Documentation": 1, "Backend": 3} }
     profile_data = models.JSONField(default=dict)
     
-    # This tracks the total 'estimated_hours' of tasks assigned to this employee.
-    current_workload = models.IntegerField(default=0) 
+    # --- V4.0 CHANGE ---
+    # We have DELETED the 'current_workload' field.
+    # This will now be calculated dynamically in the algorithm and serializers
+    # based on the 'progress' and 'estimated_hours' of a user's assigned tasks.
 
     # --- V2.0 FIELD ---
     # Field for the "Strike System" (Feature #4)
