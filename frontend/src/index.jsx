@@ -50,7 +50,7 @@ const router = createBrowserRouter([
         element: <ProjectsListPage />,
       },
       {
-        path: "/project/:id", // A single project
+        path: "/projects/:id", // A single project
         element: <ProjectPage />,
       },
 

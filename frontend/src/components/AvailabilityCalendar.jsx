@@ -7,14 +7,13 @@ import dayGridPlugin from '@fullcalendar/daygrid';
 import timeGridPlugin from '@fullcalendar/timegrid';
 import interactionPlugin from '@fullcalendar/interaction';
 import { Card } from '@/components/ui/card';
-import { Button } from '@/components/ui/button'; // <-- 1. ADD THIS IMPORT
-import { Trash } from 'lucide-react';           // <-- 2. ADD THIS IMPORT
+import { Button } from '@/components/ui/button';
+import { Trash } from 'lucide-react';
 
 export default function AvailabilityCalendar() {
     const [events, setEvents] = useState([]);
     const { api } = useAuth();
 
-    // Fetches existing availability
     const fetchAvailability = async () => {
         try {
             const response = await api.get('/availability/');
@@ -23,8 +22,9 @@ export default function AvailabilityCalendar() {
                 title: 'Available',
                 start: slot.start_time,
                 end: slot.end_time,
-                backgroundColor: '#16a34a',
-                borderColor: '#16a34a'
+                backgroundColor: '#ecfccb',
+                borderColor: '#65a30d',
+                textColor: '#14532d'
             }));
             setEvents(formattedEvents);
         } catch (err) {
@@ -36,7 +36,6 @@ export default function AvailabilityCalendar() {
         fetchAvailability();
     }, []);
 
-    // Handles creating a new slot
     const handleSelect = async (selectInfo) => {
         const newSlot = {
             start_time: selectInfo.startStr,
@@ -49,15 +48,15 @@ export default function AvailabilityCalendar() {
                 title: 'Available',
                 start: response.data.start_time,
                 end: response.data.end_time,
-                backgroundColor: '#16a34a',
-                borderColor: '#16a34a'
+                backgroundColor: '#ecfccb',
+                borderColor: '#65a30d',
+                textColor: '#14532d'
             }]);
         } catch (err) {
             console.error("Failed to save availability", err);
         }
     };
 
-    // Handles deleting a single slot
     const handleEventClick = async (clickInfo) => {
         if (window.confirm("Are you sure you want to delete this availability slot?")) {
             try {
@@ -69,14 +68,10 @@ export default function AvailabilityCalendar() {
         }
     };
 
-    // --- 3. ADD THIS NEW FUNCTION ---
     const handleClearAll = async () => {
-        if (window.confirm("Are you sure you want to delete ALL your availability slots? This cannot be undone.")) {
+        if (window.confirm("Are you sure you want to delete ALL your availability slots?")) {
             try {
-                // Call our new backend endpoint
                 await api.post('/availability/clear_all/');
-                
-                // On success, clear the events from the UI instantly
                 setEvents([]); 
             } catch (err) {
                 console.error("Failed to clear all slots", err);
@@ -86,44 +81,48 @@ export default function AvailabilityCalendar() {
     };
 
     return (
-        <Card className="bg-gray-900 border-gray-800 text-white p-4">
-            <style>
-                {/* ... (your style tag is fine) ... */}
-            </style>
+        <Card className="bg-white border-slate-200 text-slate-900 p-4 shadow-sm">
+            <style>{`
+                .fc-theme-standard td, .fc-theme-standard th { border-color: #e2e8f0; }
+                .fc-col-header-cell-cushion { color: #0f172a; font-weight: 600; }
+                .fc-timegrid-axis-cushion, .fc-timegrid-slot-label-cushion { color: #64748b; }
+                .fc-button-primary { background-color: #0f172a !important; border-color: #0f172a !important; }
+                .fc-button-primary:hover { background-color: #1e293b !important; }
+                .fc-today-button { background-color: #f1f5f9 !important; border-color: #e2e8f0 !important; color: #0f172a !important; }
+            `}</style>
 
-            {/* --- 4. ADD THIS BUTTON --- */}
             <div className="flex justify-end mb-4">
                 <Button
                     variant="destructive"
                     size="sm"
                     onClick={handleClearAll}
+                    className="bg-red-50 text-red-600 hover:bg-red-100 border border-red-200 shadow-none"
                 >
                     <Trash className="mr-2 h-4 w-4" />
-                    Clear All My Slots
+                    Clear All Slots
                 </Button>
             </div>
-            {/* --- END OF NEW BUTTON --- */}
 
             <FullCalendar
                 plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
                 initialView="timeGridWeek"
+                timeZone="Asia/Kolkata"
                 locale="en-GB"
                 headerToolbar={{
                     left: 'prev,next today',
                     center: 'title',
                     right: 'dayGridMonth,timeGridWeek,timeGridDay'
                 }}
-                dayHeaderFormat={{
-                    day: '2-digit',
-                    month: '2-digit'
-                }}
+                dayHeaderFormat={{ day: '2-digit', month: '2-digit' }}
                 selectable={true}
                 select={handleSelect}
                 eventClick={handleEventClick}
                 events={events}
+                height="auto"
+                slotMinTime="07:00:00"
+                slotMaxTime="19:00:00"
+                allDaySlot={false}
             />
         </Card>
     );
 }
-
-// (The Card import you had at the bottom was fine, but it's cleaner at the top)

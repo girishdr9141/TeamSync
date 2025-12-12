@@ -3,248 +3,323 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { Link } from 'react-router-dom';
+import { toast } from 'sonner';
+import { motion } from 'framer-motion';
 
-// --- V2.0 IMPORTS ---
-// We'll need the toast hook for notifications
-import { useToast } from '@/hooks/use-toast'; 
-// We'll use the Select components for our progress dropdown
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-// --- END V2.0 IMPORTS ---
+// UI Components
+import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 
-import { Button } from '@/components/ui/button';
-import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from '@/components/ui/card';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { FolderKanban, FileText } from 'lucide-react';
+// Icons
+import { 
+  LayoutDashboard, 
+  CheckCircle2, 
+  Clock, 
+  AlertTriangle, 
+  ArrowRight, 
+  Zap, 
+  Shield,
+  Briefcase
+} from 'lucide-react';
 
-// --- V2.0 HELPER FUNCTION ---
-// A simple utility to make our ISO date strings human-readable
-// Example: "2025-11-14T13:30:00Z" -> "11/14/2025, 1:30:00 PM"
-// This will respect the user's local timezone.
-const formatDate = (dateString) => {
-    if (!dateString) return "N/A";
-    // Using 'en-GB' locale formats the date as dd/mm/yyyy
-    return new Date(dateString).toLocaleString('en-GB');
+// --- INTERNAL COMPONENT: DYNAMIC GREETING ---
+const Greeting = ({ username }) => {
+    const hour = new Date().getHours();
+    let greeting = "Welcome back";
+    if (hour < 12) greeting = "Good morning";
+    else if (hour < 18) greeting = "Good afternoon";
+    else greeting = "Good evening";
+
+    return (
+        <div className="mb-8">
+            <h1 className="text-3xl font-bold text-slate-900 tracking-tight">
+                {greeting}, <span className="text-slate-600">{username}</span>.
+            </h1>
+            <p className="text-slate-500 mt-2 text-lg">
+                Here is your overview for today.
+            </p>
+        </div>
+    );
 };
-// --- END V2.0 HELPER ---
+
+// --- INTERNAL COMPONENT: STAT CARD ---
+const StatCard = ({ title, value, subtext, icon: Icon, alert = false, delay = 0 }) => (
+    <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay }}
+    >
+        <Card className={`bg-white border-slate-200 shadow-sm ${alert ? 'border-red-200 bg-red-50' : 'hover:border-slate-300'} transition-all duration-300`}>
+            <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
+                <CardTitle className="text-sm font-semibold text-slate-500 uppercase tracking-wider">
+                    {title}
+                </CardTitle>
+                <Icon className={`h-4 w-4 ${alert ? 'text-red-500' : 'text-slate-400'}`} />
+            </CardHeader>
+            <CardContent>
+                <div className={`text-3xl font-bold ${alert ? 'text-red-600' : 'text-slate-900'}`}>{value}</div>
+                <p className="text-xs text-slate-500 mt-1">{subtext}</p>
+            </CardContent>
+        </Card>
+    </motion.div>
+);
 
 export default function DashboardPage() {
+    const { user, api, refreshUser } = useAuth();
     const [myTasks, setMyTasks] = useState([]);
-    const [myProjects, setMyProjects] = useState([]);
+    const [projectsCount, setProjectsCount] = useState(0);
     const [loading, setLoading] = useState(true);
-    const { api, user } = useAuth();
-    
-    // --- V2.0: Initialize the toast hook ---
-    const { toast } = useToast();
 
     useEffect(() => {
-        const fetchData = async () => {
-            setLoading(true);
+        const loadDashboardData = async () => {
             try {
-                const [tasksResponse, projectsResponse] = await Promise.all([
-                    api.get('/tasks/my_tasks/'),
-                    api.get('/projects/')
-                ]);
-                
-                setMyTasks(tasksResponse.data);
-                // We'll use the full projects list to find task project names
-                setMyProjects(projectsResponse.data); 
-                
+                // 1. Refresh user data
+                await refreshUser();
+
+                // 2. Fetch "My Tasks"
+                const tasksRes = await api.get('/tasks/my_tasks/');
+                setMyTasks(tasksRes.data);
+
+                // 3. Fetch Projects count
+                const projectsRes = await api.get('/projects/');
+                setProjectsCount(projectsRes.data.length);
+
             } catch (err) {
-                console.error("Failed to fetch dashboard data", err);
+                console.error("Failed to load dashboard", err);
+                toast.error("Failed to synchronize dashboard data.");
             } finally {
                 setLoading(false);
             }
         };
 
-        fetchData();
-    }, [api]); // Run when 'api' object is available
+        if (user) {
+            loadDashboardData();
+        }
+    }, []); 
 
-    // --- V2.0: Helper to get project name from its ID ---
-    // This is a small improvement on your original code.
-    const getProjectName = (projectId) => {
-        const project = myProjects.find(p => p.id === projectId);
-        return project ? project.name : `Project ${projectId}`;
-    };
+    // --- FUNCTION TO UPDATE PROGRESS ---
+    const updateTaskProgress = async (taskId, newProgress) => {
+        // 1. Optimistic Update (Update UI immediately)
+        setMyTasks(prevTasks => 
+            prevTasks.map(t => t.id === taskId ? { ...t, progress: newProgress } : t)
+        );
 
-    // --- V2.0: FUNCTION TO HANDLE PROGRESS CHANGE ---
-    const handleProgressChange = async (taskId, newProgress) => {
-        // Convert the string value from <Select> to a number
-        const progressValue = parseInt(newProgress, 10);
-
+        // 2. API Call (Debounce could be added here if needed, but for now direct is fine for simple usage)
         try {
-            // Call our new V2.0 API endpoint
-            const response = await api.post(`/tasks/${taskId}/set_progress/`, {
-                progress: progressValue,
-            });
-
-            // The API returns the updated task (and maybe a bonus message!)
-            const updatedTask = response.data;
-
-            // If the task is 100% complete, it will be marked 'DONE'
-            // and our 'my_tasks' API won't return it next time.
-            // Let's remove it from the list immediately for a snappy UI.
-            if (updatedTask.progress === 100) {
-                setMyTasks(prevTasks => prevTasks.filter(t => t.id !== taskId));
-            } else {
-                // Otherwise, just update the task in our list
-                setMyTasks(prevTasks => 
-                    prevTasks.map(t => (t.id === taskId ? updatedTask : t))
-                );
-            }
-
-            // Show a success toast!
-            toast({
-                title: "Progress Updated",
-                // This is the magic part: Check if the API sent a bonus message
-                // and show it if it did!
-                description: updatedTask.message || `Task set to ${updatedTask.progress}%.`,
-            });
-
+            await api.patch(`/tasks/${taskId}/`, { progress: newProgress });
+            // Optional: toast.success("Progress updated");
         } catch (error) {
-            console.error("Failed to update task progress", error);
-            // Show an error toast
-            toast({
-                variant: "destructive",
-                title: "Update Failed",
-                description: "There was an error updating your task. Please try again.",
-            });
+            toast.error("Failed to save progress");
+            // Revert on failure
+            refreshUser(); 
         }
     };
-    // --- END V2.0 FUNCTION ---
 
-    if (loading) {
-        return <p className="text-gray-400">Loading dashboard...</p>;
+    if (loading || !user) {
+        return <div className="min-h-screen bg-gray-50 flex items-center justify-center text-slate-500">Loading...</div>;
     }
 
+    // Calculations
+    const activeTasks = myTasks.filter(t => t.status !== 'DONE');
+    const overdueTasks = myTasks.filter(t => t.status === 'OVERDUE');
+    const currentWorkload = user.profile?.remaining_workload || 0;
+    const strikeCount = user.profile?.strike_count || 0;
+    const isDangerZone = strikeCount > 2;
+
     return (
-        <div className="space-y-8">
-            {/* Header (No Changes) */}
-            <div>
-                <h2 className="text-3xl font-bold text-white">
-                    Welcome back, {user?.first_name || user?.username}!
-                </h2>
-                <p className="text-lg text-gray-400">Here's a summary of your active work.</p>
-            </div>
-
-            {/* Grid Layout (Modified) */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="min-h-screen bg-gray-50 text-slate-900 p-8 font-sans">
+            <div className="max-w-7xl mx-auto space-y-8">
                 
-                {/* Column 1: My Tasks (takes up 2/3 width on large screens) */}
-                <Card className="lg:col-span-2 bg-gray-900 border-gray-800 text-white">
-                    <CardHeader>
-                        <CardTitle className="flex items-center">
-                            <FileText className="mr-2" />
-                            My Active Tasks
-                        </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                        {/* --- V2.0: UPDATED TABLE --- */}
-                        <Table>
-                            <TableHeader>
-                                <TableRow className="border-gray-800 hover:bg-gray-800">
-                                    <TableHead className="text-white">Task</TableHead>
-                                    <TableHead className="text-white">Project</TableHead>
-                                    <TableHead className="text-white">Status</TableHead>
-                                    <TableHead className="text-white">Due Date</TableHead>
-                                    <TableHead className="text-white w-[150px]">Progress</TableHead>
-                                </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                                {myTasks.length > 0 ? myTasks.map(task => (
-                                    <TableRow key={task.id} className="border-gray-800">
-                                        <TableCell className="font-medium">
-                                            <Link to={`/project/${task.project}`} className="hover:underline">
-                                                {task.title}
-                                            </Link>
-                                        </TableCell>
-                                        <TableCell>
-                                            {/* Use our helper to show the name */}
-                                            {getProjectName(task.project)}
-                                        </TableCell>
-                                        
-                                        {/* V2.0: Add styling for OVERDUE status */}
-                                        <TableCell>
-                                            <span 
-                                                className={task.status === 'OVERDUE' ? 'text-red-500 font-bold' : ''}
-                                            >
-                                                {task.status}
-                                            </span>
-                                        </TableCell>
+                <Greeting username={user.username} />
 
-                                        {/* V2.0: Show the formatted due date */}
-                                        <TableCell>
-                                            {formatDate(task.due_date)}
-                                        </TableCell>
+                {/* --- STATS GRID --- */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                    <StatCard 
+                        title="Active Tasks" 
+                        value={activeTasks.length} 
+                        subtext={`${overdueTasks.length} overdue`}
+                        icon={Zap}
+                        delay={0.1}
+                    />
+                    <StatCard 
+                        title="Current Workload" 
+                        value={`${currentWorkload.toFixed(1)}h`} 
+                        subtext="Estimated remaining effort"
+                        icon={Clock}
+                        delay={0.2}
+                    />
+                    <StatCard 
+                        title="Active Projects" 
+                        value={projectsCount} 
+                        subtext="Workspaces you belong to"
+                        icon={Briefcase}
+                        delay={0.3}
+                    />
+                    <StatCard 
+                        title="Strike Status" 
+                        value={strikeCount} 
+                        subtext={isDangerZone ? "CRITICAL LEVEL" : "Keep it at zero"}
+                        icon={Shield}
+                        alert={strikeCount > 0}
+                        delay={0.4}
+                    />
+                </div>
 
-                                        {/* V2.0: Add the progress <Select> dropdown */}
-                                        <TableCell>
-                                            <Select
-                                                // We must use String() for the <Select> value
-                                                value={String(task.progress)}
-                                                // When changed, call our new handler
-                                                onValueChange={(value) => handleProgressChange(task.id, value)}
-                                            >
-                                                <SelectTrigger className="w-full bg-gray-800 border-gray-700">
-                                                    <SelectValue placeholder="Set progress" />
-                                                </SelectTrigger>
-                                                <SelectContent className="bg-gray-900 border-gray-800 text-white">
-                                                    <SelectItem value="0" className="hover:bg-gray-800">Not Started (0%)</SelectItem>
-                                                    <SelectItem value="25" className="hover:bg-gray-800">25%</SelectItem>
-                                                    <SelectItem value="50" className="hover:bg-gray-800">50%</SelectItem>
-                                                    <SelectItem value="75" className="hover:bg-gray-800">75%</SelectItem>
-                                                    <SelectItem value="100" className="hover:bg-gray-800">Done (100%)</SelectItem>
-                                                </SelectContent>
-                                            </Select>
-                                        </TableCell>
-                                    </TableRow>
-                                )) : (
-                                    <TableRow>
-                                        {/* V2.0: Updated colSpan to 5 */}
-                                        <TableCell colSpan="5" className="text-center text-gray-400 h-24">
-                                            You have no active tasks.
-                                        </TableCell>
-                                    </TableRow>
-                                )}
-                            </TableBody>
-                        </Table>
-                    </CardContent>
-                </Card>
+                {/* --- MAIN CONTENT SPLIT --- */}
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mt-8">
+                    
+                    {/* LEFT COLUMN: MY TASK QUEUE (2/3 width) */}
+                    <motion.div 
+                        className="lg:col-span-2 space-y-6"
+                        initial={{ opacity: 0, x: -20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: 0.5 }}
+                    >
+                        <div className="flex items-center justify-between">
+                            <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
+                                <LayoutDashboard className="w-5 h-5 text-slate-500" />
+                                My Tasks
+                            </h2>
+                            <Link to="/projects">
+                                <Button variant="ghost" className="text-slate-500 hover:text-slate-900 hover:bg-slate-100">View Projects</Button>
+                            </Link>
+                        </div>
 
-                {/* Column 2: My Projects (takes up 1/3 width) */}
-                <Card className="lg:col-span-1 bg-gray-900 border-gray-800 text-white">
-                    <CardHeader>
-                        <CardTitle className="flex items-center">
-                            <FolderKanban className="mr-2" />
-                            My Projects
-                        </CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                        {/* We slice to show first 3 projects */}
-                        {myProjects.length > 0 ? myProjects.slice(0, 3).map(project => (
-                            <div key={project.id} className="pb-4 border-b border-gray-800 last:border-b-0">
-                                <Link to={`/project/${project.id}`}>
-                                    <h3 className="font-semibold hover:underline">{project.name}</h3>
-                                </Link>
-                                <p className="text-sm text-gray-400">{project.members.length} member(s)</p>
-                            </div>
-                        )) : (
-                            <p className="text-gray-400">You are not part of any projects.</p>
+                        <Card className="bg-white border-slate-200 shadow-sm overflow-hidden">
+                            {activeTasks.length > 0 ? (
+                                <div className="divide-y divide-slate-100">
+                                    {activeTasks.map((task) => (
+                                        <div key={task.id} className="p-5 hover:bg-slate-50 transition-colors flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6 group">
+                                            
+                                            {/* Task Info */}
+                                            <div className="space-y-1 flex-1">
+                                                <div className="flex items-center gap-2">
+                                                    <h3 className="font-semibold text-slate-900">
+                                                        {task.title}
+                                                    </h3>
+                                                    {task.status === 'OVERDUE' && (
+                                                        <Badge variant="destructive" className="text-[10px]">OVERDUE</Badge>
+                                                    )}
+                                                    {task.status === 'IN_PROGRESS' && (
+                                                        <Badge variant="secondary" className="bg-blue-100 text-blue-700 hover:bg-blue-200 text-[10px]">IN PROGRESS</Badge>
+                                                    )}
+                                                </div>
+                                                <p className="text-sm text-slate-500">
+                                                    Due: {new Date(task.due_date).toLocaleDateString()} • {task.estimated_hours}h est.
+                                                </p>
+                                            </div>
+                                            
+                                            {/* Interactive Progress Bar */}
+                                            <div className="flex items-center gap-4 w-full sm:w-auto">
+                                                <div className="flex-1 sm:w-40">
+                                                    <div className="flex justify-between text-xs text-slate-500 mb-2">
+                                                        <span>Progress</span>
+                                                        <span className="font-medium text-slate-900">{task.progress}%</span>
+                                                    </div>
+                                                    
+                                                    {/* Custom Range Slider */}
+                                                    <input 
+                                                        type="range" 
+                                                        min="0" 
+                                                        max="100" 
+                                                        step="10"
+                                                        value={task.progress}
+                                                        onChange={(e) => updateTaskProgress(task.id, parseInt(e.target.value))}
+                                                        className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-offset-2"
+                                                    />
+                                                </div>
+                                                
+                                                <Link to={`/projects/${task.project}`}>
+                                                    <Button size="icon" variant="outline" className="h-9 w-9 border-slate-200 hover:bg-white hover:border-slate-400 text-slate-400 hover:text-slate-900">
+                                                        <ArrowRight className="h-4 w-4" />
+                                                    </Button>
+                                                </Link>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            ) : (
+                                <div className="p-12 text-center text-slate-500 flex flex-col items-center">
+                                    <CheckCircle2 className="w-12 h-12 mb-4 text-green-500" />
+                                    <h3 className="text-lg font-medium text-slate-900">All caught up</h3>
+                                    <p className="max-w-xs mx-auto mt-2">
+                                        You have no active tasks. Check your projects for new assignments.
+                                    </p>
+                                </div>
+                            )}
+                        </Card>
+                    </motion.div>
+
+                    {/* RIGHT COLUMN: ALERTS & ACTIONS (1/3 width) */}
+                    <motion.div 
+                        className="space-y-6"
+                        initial={{ opacity: 0, x: 20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: 0.6 }}
+                    >
+                        <h2 className="text-xl font-bold text-slate-900">System Status</h2>
+                        
+                        {/* STRIKE ALERT CARD */}
+                        {strikeCount > 0 ? (
+                            <Card className="bg-red-50 border-red-200 border shadow-sm">
+                                <CardHeader>
+                                    <CardTitle className="text-red-700 flex items-center gap-2 text-lg">
+                                        <AlertTriangle className="h-5 w-5" />
+                                        Attention Needed
+                                    </CardTitle>
+                                </CardHeader>
+                                <CardContent>
+                                    <p className="text-sm text-red-600 mb-2">
+                                        You have {strikeCount} strike(s) on your record.
+                                    </p>
+                                    <p className="text-xs text-red-500">
+                                        Strikes affect your future task assignments score. Complete overdue tasks immediately.
+                                    </p>
+                                </CardContent>
+                            </Card>
+                        ) : (
+                             <Card className="bg-green-50 border-green-200 border shadow-sm">
+                                <CardHeader>
+                                    <CardTitle className="text-green-700 flex items-center gap-2 text-lg">
+                                        <Shield className="h-5 w-5" />
+                                        Excellent Standing
+                                    </CardTitle>
+                                </CardHeader>
+                                <CardContent>
+                                    <p className="text-sm text-green-600">
+                                        Zero strikes. Your reliability score is optimized for high-priority assignments.
+                                    </p>
+                                </CardContent>
+                            </Card>
                         )}
-                    </CardContent>
-                    <CardFooter>
-                        <Link to="/projects" className="w-full">
-                            <Button variant="outline" className="w-full border-blue-400 hover:bg-blue-900/50 hover:text-blue-300 text-blue-400">
-                                View All Projects
-                            </Button>
-                        </Link>
-                    </CardFooter>
-                </Card>
+
+                        <Card className="bg-white border-slate-200 shadow-sm">
+                            <CardHeader>
+                                <CardTitle className="text-slate-900 text-base">Quick Access</CardTitle>
+                            </CardHeader>
+                            <CardContent className="space-y-3">
+                                <Link to="/projects">
+                                    <Button 
+                                        variant="outline" 
+                                        className="w-full justify-start bg-white border-slate-200 text-slate-700 hover:bg-slate-50 hover:text-slate-900"
+                                    >
+                                        <Briefcase className="mr-2 h-4 w-4 text-slate-500" /> All Projects
+                                    </Button>
+                                </Link>
+                                <Link to="/settings">
+                                    <Button 
+                                        variant="outline" 
+                                        className="w-full justify-start bg-white border-slate-200 text-slate-700 hover:bg-slate-50 hover:text-slate-900"
+                                    >
+                                        <Zap className="mr-2 h-4 w-4 text-slate-500" /> Update Skills
+                                    </Button>
+                                </Link>
+                            </CardContent>
+                        </Card>
+
+                    </motion.div>
+                </div>
             </div>
         </div>
     );

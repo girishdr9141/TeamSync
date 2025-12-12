@@ -57,8 +57,6 @@ export const AuthProvider = ({ children }) => {
     
     const login = async (username, password) => {
         try {
-            // --- THIS IS THE FIX ---
-            // The URL must be '/auth/login/' (with no '/1')
             const response = await api.post('/auth/login/', { username, password });
             const { token, user } = response.data;
             
@@ -79,8 +77,6 @@ export const AuthProvider = ({ children }) => {
 
     const register = async (username, password, email) => {
         try {
-            // --- THIS IS THE FIX ---
-            // The URL must be '/auth/register/' (with no '/1')
             await api.post('/auth/register/', { username, password, email });
             
             // If registration is successful, automatically log them in
@@ -91,14 +87,26 @@ export const AuthProvider = ({ children }) => {
         }
     };
 
-    const logout = () => {
-        setToken(null);
-        setUser(null);
-        localStorage.removeItem('token');
-        localStorage.removeItem('user');
-        
-        // Remove the auth header from future requests
-        delete api.defaults.headers.common['Authorization'];
+    // --- FIX: ROBUST LOGOUT FUNCTION ---
+    const logout = async () => {
+        try {
+            // Optional: Attempt to notify backend (uncomment if you have a logout endpoint)
+            // await api.post('/auth/logout/'); 
+        } catch (error) {
+            console.error("Logout API call failed", error);
+        } finally {
+            // THIS BLOCK ALWAYS RUNS, ensuring the user is logged out locally
+            setToken(null);
+            setUser(null);
+            localStorage.removeItem('token');
+            localStorage.removeItem('user');
+            
+            // Remove the auth header from future requests
+            delete api.defaults.headers.common['Authorization'];
+            
+            // Optional: Force reload to clear any in-memory application states
+            // window.location.href = '/login'; 
+        }
     };
 
     // This function updates the user info in our context
@@ -110,7 +118,10 @@ export const AuthProvider = ({ children }) => {
             return response.data;
         } catch (error) {
             console.error("Failed to refresh user", error);
-            logout(); // If we can't refresh, log them out
+            // Only auto-logout if it's strictly a 401 (Unauthorized)
+            if (error.response && error.response.status === 401) {
+                logout();
+            }
         }
     };
 

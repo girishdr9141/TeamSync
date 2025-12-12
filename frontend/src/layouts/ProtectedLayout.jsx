@@ -1,81 +1,114 @@
 // src/layouts/ProtectedLayout.jsx
 
-import React from 'react';
-import { Navigate, Outlet, Link } from 'react-router-dom';
+import React, { useState } from 'react';
+import { Outlet, Navigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { Button } from '@/components/ui/button';
-import { LayoutDashboard, FolderKanban, LogOut, Settings } from 'lucide-react'; // Our icons
-import { Toaster } from "@/components/Toaster"
+import { Sidebar, SidebarBody, SidebarLink, SidebarButton } from '@/components/ui/sidebar';
+import { TeamSyncLogo } from '@/components/ui/logo';
+import { cn } from "@/lib/utils";
+
+// Icons
+import {
+  LayoutDashboard,
+  FolderOpen,
+  Settings,
+  LogOut,
+  UserCircle
+} from "lucide-react";
 
 export default function ProtectedLayout() {
-    const { user, logout } = useAuth();
+  const { user, logout } = useAuth();
+  const [open, setOpen] = useState(false);
 
-    // --- 1. Protection ---
-    // If there is no user, redirect them to the /login page
-    if (!user) {
-        return <Navigate to="/login" />;
-    }
+  if (!user) {
+    return <Navigate to="/login" replace />;
+  }
 
-    // --- 2. The Layout ---
-    // This is a modern 2-column layout (Sidebar + Main Content)
-    return (
-        <div className="flex min-h-screen w-full bg-gray-950">
+  // FIXED: Explicitly added text-slate-500 to icons so they are dark gray, not white.
+  const links = [
+    {
+      label: "Dashboard",
+      href: "/",
+      icon: <LayoutDashboard className="h-5 w-5 flex-shrink-0 text-slate-500" />,
+    },
+    {
+      label: "Projects",
+      href: "/projects",
+      icon: <FolderOpen className="h-5 w-5 flex-shrink-0 text-slate-500" />,
+    },
+    {
+      label: "Settings",
+      href: "/settings",
+      icon: <Settings className="h-5 w-5 flex-shrink-0 text-slate-500" />,
+    },
+  ];
+
+  const handleLogout = () => {
+      logout();
+  };
+
+  return (
+    <div className={cn(
+      "flex flex-col md:flex-row bg-gray-50 w-full flex-1 max-w-full mx-auto overflow-hidden",
+      "h-screen"
+    )}>
+      {/* SIDEBAR CONTAINER */}
+      <Sidebar open={open} setOpen={setOpen}>
+        {/* FIXED: Added 'text-slate-900' to the body class to set default text color */}
+        <SidebarBody className="justify-between gap-10 bg-white border-r border-slate-200 text-slate-900">
+          <div className="flex flex-col flex-1 overflow-y-auto overflow-x-hidden">
             
-            {/* --- Sidebar (Column 1) --- */}
-            <aside className="w-64 flex-shrink-0 border-r border-gray-800 bg-gray-900 p-4 flex flex-col">
-                {/* Logo/Title */}
-                <div className="mb-8">
-                    <h1 className="text-2xl font-bold text-white">TeamSync</h1>
-                </div>
-
-                {/* Main Navigation */}
-                <nav className="flex-grow space-y-2">
-                    <Link to="/">
-                        <Button variant="ghost" className="w-full justify-start text-lg text-gray-300 hover:bg-gray-800 hover:text-white">
-                            <LayoutDashboard className="mr-3 h-5 w-5" />
-                            Dashboard
-                        </Button>
-                    </Link>
-                    <Link to="/projects">
-                        <Button variant="ghost" className="w-full justify-start text-lg text-gray-300 hover:bg-gray-800 hover:text-white">
-                            <FolderKanban className="mr-3 h-5 w-5" />
-                            Projects
-                        </Button>
-                    </Link>
-                </nav>
-            <Toaster position="top-right" />
-                {/* Footer / User Area */}
-                <div className="mt-auto">
-                    <Link to="/settings">
-                        <Button variant="ghost" className="w-full justify-start text-lg text-gray-300 hover:bg-gray-800 hover:text-white">
-                            <Settings className="mr-3 h-5 w-5" />
-                            Settings
-                        </Button>
-                    </Link>
-                    <Button 
-                        variant="ghost" 
-                        onClick={logout} 
-                        className="w-full justify-start text-lg text-red-500 hover:bg-red-900/50 hover:text-red-400"
-                    >
-                        <LogOut className="mr-3 h-5 w-5" />
-                        Log Out
-                    </Button>
-                </div>
-            </aside>
-
-            {/* --- Main Content (Column 2) --- */}
-            <main className="flex-1 p-8 overflow-auto">
-                {/* Header */}
-                <header className="mb-8 flex justify-between items-center">
-                    <h2 className="text-3xl font-bold text-white">Dashboard</h2> 
-                    <div className="text-lg text-gray-400">
-                        Welcome, {user.first_name || user.username}
+            {/* LOGO AREA */}
+            <div className="flex items-center justify-start gap-2 mb-10">
+                <TeamSyncLogo className="w-8 h-8 flex-shrink-0 text-indigo-600" />
+                {open && (
+                    <div className="text-slate-900 font-bold text-xl transition-all">
+                        TeamSync
                     </div>
-                </header>
+                )}
+            </div>
 
-                {/* This is where the actual page (Dashboard, ProjectPage, etc.) will be rendered */}
-                <Outlet />
-            </main>
+            {/* NAV LINKS */}
+            <div className="flex flex-col gap-2">
+              {links.map((link, idx) => (
+                <SidebarLink 
+                    key={idx} 
+                    link={link} 
+                    // FIXED: Force text color to slate-600 (Dark Gray)
+                    className="text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition-colors rounded-md"
+                />
+              ))}
+            </div>
+          </div>
+
+          {/* FOOTER */}
+          <div className="flex flex-col gap-2">
+            <SidebarLink
+              link={{
+                label: user ? user.username : "User",
+                href: "/settings", 
+                // FIXED: Icon color
+                icon: <UserCircle className="h-7 w-7 flex-shrink-0 rounded-full bg-slate-100 text-slate-600 p-1" />,
+              }}
+              className="text-slate-700 font-medium hover:bg-slate-100 rounded-md"
+            />
+            
+            <SidebarButton 
+                onClick={handleLogout}
+                icon={<LogOut className="h-5 w-5 flex-shrink-0 text-slate-500" />}
+                label="Logout"
+                className="text-slate-500 hover:text-red-600 hover:bg-red-50 transition-colors rounded-md"
+            />
+          </div>
+        </SidebarBody>
+      </Sidebar>
+      
+      {/* MAIN CONTENT AREA */}
+      <main className="flex-1 overflow-y-auto bg-gray-50 text-slate-900 p-2 md:p-6">
+        <div className="bg-white border border-slate-200 rounded-xl min-h-full p-4 md:p-8 shadow-sm overflow-hidden relative">
+            <Outlet />
         </div>
-    );
+      </main>
+    </div>
+  );
 }
